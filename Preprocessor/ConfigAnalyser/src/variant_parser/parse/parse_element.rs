@@ -1,5 +1,5 @@
 use peg::{ParseElem, RuleResult};
-use variant::SqVariant;
+use variant::SqFileVariant;
 use std::{cmp::Ordering, sync::Arc, time::SystemTime, usize};
 
 use peg::{str::LineCol, Parse};
@@ -7,7 +7,7 @@ use ConfigPredictor::state::{Evaluation, SqCompilerState};
 use PreprocessorParser::ast::{If, Node, AST};
 
 use super::*;
-impl<'input> ParseElem<'input> for SqVariant{
+impl<'input> ParseElem<'input> for SqFileVariant{
     type Element = <str as ParseElem<'input>>::Element;
 
     fn parse_elem(&'input self, pos: usize) -> RuleResult<Self::Element> {
@@ -19,18 +19,18 @@ impl<'input> ParseElem<'input> for SqVariant{
         }
     }
 }
-impl SqVariant{
+impl SqFileVariant{
     pub fn calculate_next_position(&self, target_pos: usize) -> Option<(char, usize)>{
         //calculate_next_position_internal(&self.content, &self.state, target_pos, 0, 0).ok()
-        let time = SystemTime::now();
+        //let time = SystemTime::now();
         let a = match calculate_next_position_internal(&self.content, &self.state, target_pos){
             NextPos::Here(a, b) => Some((a, b)),
             NextPos::Next(_) => panic!("uh oh spaghetti-ohs"),
             NextPos::Nope(_) => None,
         };
         let time2 = SystemTime::now();
-        let mut write = self.time_wasted.write().unwrap();
-        *write = write.checked_add(time2.duration_since(time).unwrap()).unwrap();
+        //let mut write = self.time_wasted.write().unwrap();
+        //*write = write.checked_add(time2.duration_since(time).unwrap()).unwrap();
         a
     }
 }
@@ -214,9 +214,8 @@ fn test_skipping(){
     let states = get_states(&ast.ast);
     let mut state = SqCompilerState::one("DEBUG".to_string(), true);
     state.insert_term("SERVER".to_string(), true);
-    let arc = Arc::new(ast);
 
-    let variant = SqVariant::generate(arc, state);
+    let variant = SqFileVariant::generate(&ast, state);
     println!("state {:?}", &variant.state);
     let result = variant_inout::out_the_in(&variant).unwrap();
     println!("{}", result);
@@ -237,9 +236,8 @@ fn test_else(){
     let states = get_states(&ast.ast);
     let mut state = SqCompilerState::one("DEBUG".to_string(), true);
     state.insert_term("SERVER".to_string(), true);
-    let arc = Arc::new(ast);
 
-    let variant = SqVariant::generate(arc, state);
+    let variant = SqFileVariant::generate(&ast, state);
     println!("state {:?}", &variant.state);
     let result = variant_inout::out_the_in(&variant).unwrap();
     println!("{}", result);
@@ -257,7 +255,7 @@ fn text_parse(){
     let condition = Condition::term("DEBUG");
     let structure = Node::new((0, (len*3) + 6), AST::RunOn(input, condition));
     //println!("{}", result);
-    let file = SqVariant::generate(Arc::new(structure), SqCompilerState::one("DEBUG".to_string(), true));
+    let file = SqFileVariant::generate(&structure, SqCompilerState::one("DEBUG".to_string(), true));
     let result = variant_inout::out_the_in(&file).unwrap();
     println!("{:?}", result)
     //let result = file.position_repr(15);
@@ -266,7 +264,7 @@ fn text_parse(){
 //This is effectively just an alternate string converter to the recursive function
 //Logically it should return the same output - any [#] statements
 peg::parser!{
-    pub grammar variant_inout() for SqVariant{
+    pub grammar variant_inout() for SqFileVariant{
         #[no_eof]
         pub rule out_the_in() -> String =
             a:(a:[_])* {a.into_iter().collect()}
@@ -302,18 +300,19 @@ fn test_pos_conversions(){
     let states = get_states(&ast.ast);
     let mut state = SqCompilerState::one("DEBUG".to_string(), true);
     state.insert_term("SERVER".to_string(), true);
-    let arc = Arc::new(ast);
 
-    let variant = SqVariant::generate(arc, state);
+    let variant = SqFileVariant::generate(&ast, state);
 
     let mut count = 0;
     let mut stuff = vec![];
     while let Some((elem, newpos)) = variant.calculate_next_position(count){
-        println!("{:?} : {:?}", elem, input.chars().nth(count).unwrap());
+        //println!("{:?} : {:?}", elem, input.chars().nth(count).unwrap());
         assert_eq!(elem, input.chars().nth(count).unwrap());
         count = newpos;
         stuff.push(elem);
     }
     let string: String = stuff.iter().collect();
     println!("{}", string);
+    //let time = variant.time_wasted.read().unwrap();
+    //println!("Time wasted: {:?}", time);
 }

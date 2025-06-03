@@ -1,0 +1,14 @@
+{
+	"Name" : "LSPTest",
+	"Version": "0.1.0",
+	"LoadPriority": 5,
+	"Scripts": [
+		{
+			"Path": "firstFile.gnut",
+			"RunOn": "SERVER || CLIENT || UI"
+		}
+    ],
+		"Localisation": [
+		"resource/Flipside_localisation_%language%.txt"
+	]
+}

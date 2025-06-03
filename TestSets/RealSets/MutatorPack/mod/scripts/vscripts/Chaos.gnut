@@ -1,0 +1,118 @@
+global function Chaos_Init
+void function Chaos_Init(){
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "--------Chaos-------", ["#SETTING_DISABLED"], "0")
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "ChaosPos", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "ChaosGuns", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "--------------------", ["#SETTING_DISABLED"], "0")
+    #if SERVER
+    AddCallback_GameStateEnter( eGameState.Playing, onstart )
+    #endif
+}
+bool function ChaosPosEnabled()
+{
+    return GetCurrentPlaylistVarInt("ChaosPos", 0) == 1
+}
+bool function ChaosGunsEnabled()
+{
+    return GetCurrentPlaylistVarInt("ChaosGuns", 0) == 1
+}
+//when the imposter is sus
+#if SERVER
+void function Swappos(entity player1, entity player2)
+{
+    vector Player1pos = player1.GetOrigin() 
+    vector Player2pos = player2.GetOrigin() 
+    vector Player1Ang = player1.GetAngles() 
+    vector Player2Ang = player2.GetAngles() 
+    vector Player1Vel = player1.GetVelocity() 
+    vector Player2Vel = player2.GetVelocity() 
+    player1.SetOrigin(Player2pos)
+    player2.SetOrigin(Player1pos)
+    player1.SetAngles(Player2Ang)
+    player2.SetAngles(Player1Ang)
+    player1.SetVelocity(Player2Vel)
+    player2.SetVelocity(Player1Vel)
+}
+void function SwapGuns(entity player1, entity player2)
+{
+    array<entity> player1guns = player1.GetMainWeapons()
+    array<entity> player2guns = player2.GetMainWeapons()
+    array<entity> player1offhand = player1.GetOffhandWeapons()
+    array<entity> player2offhand = player2.GetOffhandWeapons()
+    foreach(entity weapon in player1.GetMainWeapons())
+    {
+        int index = player1guns.find(weapon)
+        array<string> mods = weapon.GetMods()
+        player1.TakeWeaponNow(weapon.GetWeaponClassName())
+        player1.GiveWeapon(player2guns[index].GetWeaponClassName(), mods)
+    }
+    foreach(entity weapon in player1.GetOffhandWeapons())
+    {
+        int index = player1offhand.find(weapon)
+        player1.TakeWeaponNow(weapon.GetWeaponClassName())
+        player1.GiveOffhandWeapon(player2offhand[index].GetWeaponClassName(), index)
+    }
+    foreach(entity weapon in player2.GetMainWeapons())
+    {
+        int index = player2guns.find(weapon)
+        array<string> mods = weapon.GetMods()
+        player2.TakeWeaponNow(weapon.GetWeaponClassName())
+        player2.GiveWeapon(player1guns[index].GetWeaponClassName(), mods)
+    }
+    foreach(entity weapon in player2.GetOffhandWeapons())
+    {
+        int index = player2offhand.find(weapon)
+        player2.TakeWeaponNow(weapon.GetWeaponClassName())
+        player2.GiveOffhandWeapon(player1offhand[index].GetWeaponClassName(), index)
+    }
+}
+void function onstart()
+{
+    thread cycle()
+}
+void function cycle()
+{
+    while(GetGameState() == eGameState.Playing)
+    {
+        array<entity> players = GetPlayerArray()
+        array<entity> titans = []
+        array<entity> pilots = []
+        foreach(entity player in GetPlayerArray()){
+            if(IsAlive(player)){
+            if(player.IsTitan())
+                titans.append(player)
+            else
+                pilots.append(player)
+        }
+    }
+        titans.randomize()
+        pilots.randomize()
+        SwapThemNow(pilots)
+        SwapThemNow(titans)
+            wait 30.0
+    }
+}
+void function swapeasy(entity player1, entity player2)
+{
+    if(ChaosGunsEnabled())
+        SwapGuns(player1, player2)
+    if(ChaosPosEnabled())
+        Swappos(player1, player2)
+}
+void function SwapThemNow(array<entity> pilots)
+{
+    while(pilots.len() > 1)
+    {
+        if(pilots.len() == 3){
+            swapeasy(pilots[0], pilots[1])
+            swapeasy(pilots[2], pilots[1])
+            pilots.remove(2)
+        }
+        else{
+            swapeasy(pilots[0], pilots[1])
+        }
+        pilots.remove(1)
+        pilots.remove(0)
+    }
+}
+#endif

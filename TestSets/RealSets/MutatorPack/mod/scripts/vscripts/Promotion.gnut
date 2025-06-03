@@ -1,0 +1,89 @@
+global function Promotion_Init
+void function Promotion_Init(){
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "Promotion", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+    #if SERVER
+    AddCallback_OnPlayerKilled(Kill)
+    AddCallback_OnPlayerRespawned(Respawn)
+    AddCallback_OnPlayerGetsNewPilotLoadout( OnPlayerChangeLoadout)
+    #endif
+}
+bool function PromotionEnabled(){
+    return GetCurrentPlaylistVarInt("Promotion", 0) == 1
+}
+struct{
+    table<entity,array<string> > items = {}
+    table<entity,int> stage = {}
+    table<array<array<string> > > mods = {}
+} file
+#if SERVER
+void function Respawn(entity player){
+    if(PromotionEnabled() && player.GetOffhandWeapons().len() != 0 && player.GetMainWeapons().len() !=0){
+    array<string> Gear= []
+    array<entity> Guns = player.GetMainWeapons()
+    array<array<string > > Mods = []
+    array<entity> Offhand = player.GetOffhandWeapons()
+    foreach(entity offhand in Offhand){
+        if(offhand.GetWeaponClassName() == "melee_pilot_emptyhanded")
+            Offhand.remove(Offhand.find(offhand))
+    }
+    Gear.append(Guns[0].GetWeaponClassName())
+    foreach(entity weapon in Guns)
+        Mods.append(weapon.GetMods())
+    foreach(entity gear in Offhand)
+        Gear.append(gear.GetWeaponClassName())
+
+    Guns.remove(0)
+    foreach(entity gun in Guns)
+        Gear.append(gun.GetWeaponClassName())    
+    file.items[player] <- Gear
+    file.stage[player] <- 0
+    file.mods[player] <- Mods
+    foreach(entity weapon in player.GetMainWeapons())
+        player.TakeWeaponNow(weapon.GetWeaponClassName())
+    
+    foreach(entity weapon in player.GetOffhandWeapons())
+        player.TakeWeaponNow(weapon.GetWeaponClassName())
+    player.GiveWeapon("mp_weapon_car")
+    player.GiveOffhandWeapon("melee_pilot_emptyhanded", OFFHAND_MELEE)
+    }
+}
+void function OnPlayerChangeLoadout(entity player, PilotLoadoutDef loadout){
+    if(PromotionEnabled() && player.GetOffhandWeapons().len() != 0 && player.GetMainWeapons().len() !=0 && player in file.items && player in file.mods && player in file.stage){
+    delete file.items[player]
+    delete file.stage[player]
+    delete file.mods[player]
+    Respawn(player)}
+}
+void function Kill(entity victim, entity attacker, var damageInfo)
+{
+    if(PromotionEnabled() && victim.IsPlayer() && GetGameState() == eGameState.Playing )
+    {
+        delete file.items[victim]
+        delete file.stage[victim]
+        delete file.mods[victim]
+        // this should be a switch
+        //lmao
+        if(!(attacker.IsTitan()) && attacker.IsPlayer()){
+            if(file.stage[attacker] == 0){
+                attacker.TakeWeaponNow(attacker.GetMainWeapons()[0].GetWeaponClassName())
+                attacker.GiveWeapon(file.items[attacker][0], file.mods[attacker][0])
+            }
+            if(file.stage[attacker] == 1){
+                attacker.TakeWeaponNow(attacker.GetOffhandWeapons()[0].GetWeaponClassName())
+                attacker.GiveOffhandWeapon(file.items[attacker][1], 0)
+            }
+            if(file.stage[attacker] == 2){
+                attacker.TakeWeaponNow(attacker.GetOffhandWeapons()[1].GetWeaponClassName())
+                attacker.GiveOffhandWeapon(file.items[attacker][2], 1)
+            }
+            if(file.stage[attacker] == 3){
+                attacker.GiveWeapon(file.items[attacker][3], file.mods[attacker][1])
+            }
+            if(file.stage[attacker] == 4){
+                attacker.GiveWeapon(file.items[attacker][4], file.mods[attacker][2])
+            }
+        }
+        file.stage[attacker] = file.stage[attacker]+1
+    }
+}
+#endif

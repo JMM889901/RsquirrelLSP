@@ -1,0 +1,29 @@
+{
+	"Name" : "LSPTest",
+	"Version": "0.1.0",
+	"LoadPriority": 5,
+	"Scripts": [
+		{
+			"Path": "firstFile.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "flipside_init"
+			},
+
+			"ServerCallback": {
+				"After": "flipside_init"
+			}
+		},
+		{
+			"Path": "SecondFile.gnut",
+			"RunOn": "MP && CLIENT"
+		},
+		{
+			"Path": "LastFile.gnut",
+			"RunOn": "MP && SERVER"
+		}
+    ],
+		"Localisation": [
+		"resource/Flipside_localisation_%language%.txt"
+	]
+}

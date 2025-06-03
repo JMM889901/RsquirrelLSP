@@ -11,3 +11,4 @@ path = "src/lib.rs"
 PreprocessorParser = {path = "../Parser"}
 peg = "0.8.4"
 ropey = "1.6.1"
+common = { path = "../../common" }

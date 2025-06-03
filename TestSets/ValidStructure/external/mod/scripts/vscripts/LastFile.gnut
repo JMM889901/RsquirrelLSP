@@ -1,0 +1,12 @@
+//#if SERVER
+//global function a
+//#endif
+global function b
+void function b(){
+    globalfunc()
+    
+}
+
+void function calls_external(){
+    array<Entity> players = GetPlayerArray()
+}

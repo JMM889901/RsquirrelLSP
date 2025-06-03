@@ -1,0 +1,10 @@
+global function globalfunc
+
+void function globalfunc(){
+    int x = 1
+
+    someglobal()
+}
+void function calls_native(){
+    array<string> stuff = NSGetModNames()
+}

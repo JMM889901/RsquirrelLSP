@@ -2,6 +2,7 @@
 //this would allow me to avoid creating a "copy" of the file for each outcome
 
 use peg::{str::LineCol, Parse};
+use super::*;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Node{
@@ -14,12 +15,12 @@ impl Node{
     }
 }
 
-use super::*;
 #[derive(Clone, PartialEq, Debug)]
 pub enum AST{
     If(Vec<If>),
     Text(String),
     RunOn(Vec<Node>, Condition) //Wrapper for including runOnData
+    //There can only ever be one per input since this isnt from the text
 }
 impl AST{
     pub fn get_run_on(&self) -> Option<Condition>{
@@ -70,6 +71,13 @@ impl If{
         match self{
             If::If(_, vec) | If::Else(vec) => {
                 return vec.last().unwrap().range.1 //bad
+            },
+        }
+    }
+    pub fn get_startpos(&self) -> usize{
+        match self{
+            If::If(_, vec) | If::Else(vec) => {
+                return vec.first().unwrap().range.0 //bad
             },
         }
     }

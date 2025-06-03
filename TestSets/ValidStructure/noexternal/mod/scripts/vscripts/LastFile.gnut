@@ -1,0 +1,8 @@
+//#if SERVER
+//global function a
+//#endif
+global function b
+void function b(){
+    a()
+    int x = 1
+}

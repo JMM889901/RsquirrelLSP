@@ -1,0 +1,13 @@
+[package]
+name = "LSP"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread", "io-std"] }
+tower-lsp = "0.20.0"
+ConfigAnalyser = { path = "../Preprocessor/ConfigAnalyser" }
+ASTAnalyser = { path = "../AST Generator/analyser" }
+common = { path = "../common" }
+analysis_common = { path = "../AST Generator/analysis_common" }
+rayon = "1.10.0"

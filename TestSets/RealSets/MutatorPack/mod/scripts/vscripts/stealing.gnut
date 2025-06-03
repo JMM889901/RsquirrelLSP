@@ -1,0 +1,78 @@
+global function WeaponStealing_Init
+void function WeaponStealing_Init() {
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "--------Weapon Stealing-------", ["#SETTING_DISABLED"], "0")
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "steal_abilities", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "steal_weapons", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "unrestricted_stealing", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "------------------------------", ["#SETTING_DISABLED"], "0")
+
+	#if SERVER
+		AddCallback_OnPlayerKilled(StealWeapons);
+	#endif
+}
+//bools
+	bool function StealAbilitiesEnabled() {
+		return GetCurrentPlaylistVarInt("steal_abilities", 0) == 1
+	}
+
+	bool function StealWeaponsEnabled() {
+		return GetCurrentPlaylistVarInt("steal_weapons", 0) == 1
+	}
+	bool function UnrestrictedStealingEnabled() {
+		return GetCurrentPlaylistVarInt("unrestricted_stealing", 0) == 1
+	}
+#if SERVER
+//functions
+void function SwapWeapons(entity victim, entity attacker){
+	foreach(entity weapon in attacker.GetMainWeapons()){
+		attacker.TakeWeaponNow(weapon.GetWeaponClassName())}
+	foreach(entity weapon in victim.GetMainWeapons()){
+		attacker.GiveWeapon(weapon.GetWeaponClassName(), weapon.GetMods())
+		}
+}
+void function SwapAbilities(entity victim, entity attacker){
+	for ( int i = 0; i <= OFFHAND_MELEE; i++ ) // OFFHAND_MELEE is the largest
+	{
+	  if ( i != OFFHAND_INVENTORY )
+	  {
+		if ( IsValid( attacker.GetOffhandWeapon( i ) ))
+		  attacker.TakeWeaponNow( attacker.GetOffhandWeapon(i).GetWeaponClassName() )
+		if ( IsValid( victim.GetOffhandWeapon( i ) ))
+		  attacker.GiveOffhandWeapon( victim.GetOffhandWeapon( i ).GetWeaponClassName(), i)
+	  }
+	}
+}
+bool function ValidSteal(entity victim, entity attacker){
+	if ( !victim.IsPlayer() || !attacker.IsPlayer() || GetGameState() != eGameState.Playing )
+		return false
+	if(attacker.IsTitan() == victim.IsTitan())
+		return true
+	if(UnrestrictedStealingEnabled() && !(attacker.IsTitan))
+		return true
+	return false
+}
+void function debug(entity victim, entity attacker){
+	print("victim weapons")
+	foreach(entity weapon in victim.GetMainWeapons()){
+		print(weapon.GetWeaponClassName())
+		foreach(string mod in weapon.GetMods())
+			print("mod "+mod)
+	}
+	print("attacker weapons")
+	foreach(entity weapon in attacker.GetMainWeapons()){
+		print(weapon.GetWeaponClassName())
+		foreach(string mod in weapon.GetMods())
+			print("mod "+mod)
+	}
+}
+//Core
+void function StealWeapons(entity victim, entity attacker, var damageinfo)
+{
+	if(PeePeeDebugEnabled())
+		debug(victim, attacker)
+	if(StealAbilitiesEnabled() && ValidSteal(victim, attacker) && (victim.IsTitan() == attacker.IsTitan())) //some titan abilities cause crashes sadge
+		SwapAbilities(victim, attacker)
+	if(StealWeaponsEnabled() && ValidSteal(victim, attacker))
+		SwapWeapons(victim, attacker)
+}
+#endif

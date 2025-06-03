@@ -1,0 +1,5 @@
+global function someglobal
+
+void function someglobal(){
+    int x = 1
+}

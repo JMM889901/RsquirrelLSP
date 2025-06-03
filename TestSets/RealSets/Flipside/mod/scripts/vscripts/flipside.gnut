@@ -1,0 +1,551 @@
+untyped
+global function flipside_init
+#if SERVER
+global function FindNearestSafeTeleport
+global function TeleportPlayer
+#endif
+
+
+
+const FlipY = 1 
+const FlipX = 2 
+const Mirror = 3
+const UpDown = 4
+const UpDownFlip = 5
+
+void function flipside_init() {
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_FLIPSIDE", "Flipside", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_FLIPSIDE", "WallLocation", ["#SETTING_DISABLED","#GLITCHTIMEWARP", "#VERTICAL", "#HORIZONTAL"], "0")
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_FLIPSIDE", "Smoke_wall", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+	#if SERVER
+		AddCallback_OnPlayerRespawned(OnPlayerRespawn)
+        AddClientCommandCallback("!Stuck", UnstuckPlayer)
+        AddClientCommandCallback("!stuck", UnstuckPlayer)
+        AddClientCommandCallback("!STUCK", UnstuckPlayer)
+        AddClientCommandCallback("!Unstuck", UnstuckPlayer)
+        AddClientCommandCallback("!UNSTUCK", UnstuckPlayer)
+        AddClientCommandCallback("!unstuck", UnstuckPlayer)
+        AddCallback_PlayerClassChanged(OnPlayerRespawn)
+        AddCallback_OnPlayerGetsNewPilotLoadout( OnPlayerChangeLoadout)
+        AddCallback_GameStateEnter( eGameState.Playing, OnStart )
+        PrecacheParticleSystem ($"P_smokescreen_FD")
+	#endif
+}
+
+
+
+
+
+vector function GetMapOrigin(){
+        switch(GetMapName()){
+            case "mp_glitch":
+                return < -192.0005, 127.995, 0>
+            case "mp_lf_uma":
+                return < 254.001, 205, 0>
+            case "mp_lf_township":
+                return < 254.001, 205, 0>
+            case "mp_lf_deck":
+                return <254.001, 205, 0>
+            case "mp_lf_traffic":
+                return  <254.001, 205, 0>
+            case "mp_mirror_city":
+                return <0,0,0>
+    }
+    return<254.001, 205, 0>
+}
+int function GetRotateAxis(){
+    switch(GetMapName()){
+        case "mp_glitch":
+            return 3
+        case "mp_lf_deck":
+            return 1
+        case "mp_lf_traffic":
+            return  1
+        case "mp_mirror_city":
+            return 5
+}
+return 1
+}
+int function GetUpDownOffset()
+{
+    switch(GetMapName()){
+        case "mp_mirror_city":
+            return 6736 //Unused
+    }
+    return 0
+}
+bool function FlipsideEnabled(){
+    return GetCurrentPlaylistVarInt("Flipside", 0) == 1 || GetConVarInt("Flipside") == 1
+}
+void function OnStart(){
+    #if SERVER
+    if(FlipsideEnabled() && (GetCurrentPlaylistVarInt("Smoke_wall", 0) == 1)){
+SmokescreenStruct smokescreen
+    smokescreen.smokescreenFX = $"P_smokescreen_FD"
+    smokescreen.isElectric = false
+    smokescreen.origin = GetMapOrigin()
+    smokescreen.angles = <0,0,0>
+    smokescreen.lifetime = 99999
+    smokescreen.fxXYRadius = 1500
+    smokescreen.fxZRadius = 500
+    array<vector> smokes = []
+                                smokes.extend([   <120.0, 0.0, 0.0>,
+                                <0.0, 120.0, 0.0>, 
+                                <0.0, 0.0, 0.0>,
+                                <0.0, -120.0, 0.0>,
+                                < -120.0, 0.0, 0.0>, 
+                                <0.0, 100.0, 0.0>,
+                                <0.0, 200.0, 0.0>,
+                                <0.0, 300.0, 0.0>,
+                                <0.0, 400.0, 0.0>,
+                                <0.0, 500.0, 0.0>,
+                                <0.0, 600.0, 0.0>,
+                                <0.0, 700.0, 0.0>,
+                                <0.0, 800.0, 0.0>,
+                                <0.0, 900.0, 0.0>,
+                                <0.0, 1000.0, 0.0>,
+                                <0.0, 1100.0, 0.0>,
+                                <0.0, 1200.0, 0.0>,
+                                <0.0, 1300.0, 0.0>,
+                                <0.0, 1400.0, 0.0>,
+                                <0.0, 1500.0, 0.0>,
+                                <0.0, 1600.0, 0.0>,
+                                <0.0, 1700.0, 0.0>,
+                                <0.0, 1800.0, 0.0>,
+                                <0.0, 1900.0, 0.0>,
+                                <0.0, 2000.0, 0.0>,
+                                <0.0, -100.0, 0.0>,
+                                <0.0, -200.0, 0.0>,
+                                <0.0, -300.0, 0.0>,
+                                <0.0, -400.0, 0.0>,
+                                <0.0, -500.0, 0.0>,
+                                <0.0, -600.0, 0.0>,
+                                <0.0, -700.0, 0.0>,
+                                <0.0, -800.0, 0.0>,
+                                <0.0, -900.0, 0.0>,
+                                <0.0, -1000.0, 0.0>,
+                                <0.0, -1100.0, 0.0>,
+                                <0.0, -1200.0, 0.0>,
+                                <0.0, -1300.0, 0.0>,
+                                <0.0, -1400.0, 0.0>,
+                                <0.0, -1500.0, 0.0>,
+                                <0.0, -1600.0, 0.0>,
+                                <0.0, -1700.0, 0.0>,
+                                <0.0, -1800.0, 0.0>,
+                                <0.0, -1900.0, 0.0>,
+                                <0.0, -2000.0, 0.0>,
+                            
+                                
+                                <120.0, 0.0,   300.0>,
+                                <0.0, 120.0,   300.0>, 
+                                <0.0, 0.0,     300.0>,
+                                <0.0, -120.0,  300.0>,
+                                < -120.0, 0.0, 300.0>, 
+                                <0.0, 100.0,   300.0>,
+                                <0.0, 200.0,   300.0>,
+                                <0.0, 300.0,   300.0>,
+                                <0.0, 400.0,   300.0>,
+                                <0.0, 500.0,   300.0>,
+                                <0.0, 600.0,   300.0>,
+                                <0.0, 700.0,   300.0>,
+                                <0.0, 800.0,   300.0>,
+                                <0.0, 900.0,   300.0>,
+                                <0.0, 1000.0,  300.0>,
+                                <0.0, 1100.0,  300.0>,
+                                <0.0, 1200.0,  300.0>,
+                                <0.0, 1300.0,  300.0>,
+                                <0.0, 1400.0,  300.0>,
+                                <0.0, 1500.0,  300.0>,
+                                <0.0, 1600.0,  300.0>,
+                                <0.0, 1700.0,  300.0>,
+                                <0.0, 1800.0,  300.0>,
+                                <0.0, 1900.0,  300.0>,
+                                <0.0, 2000.0,  300.0>,
+                                <0.0, -100.0,  300.0>,
+                                <0.0, -200.0,  300.0>,
+                                <0.0, -300.0,  300.0>,
+                                <0.0, -400.0,  300.0>,
+                                <0.0, -500.0,  300.0>,
+                                <0.0, -600.0,  300.0>,
+                                <0.0, -700.0,  300.0>,
+                                <0.0, -800.0,  300.0>,
+                                <0.0, -900.0,  300.0>,
+                                <0.0, -1000.0, 300.0>,
+                                <0.0, -1100.0, 300.0>,
+                                <0.0, -1200.0, 300.0>,
+                                <0.0, -1300.0, 300.0>,
+                                <0.0, -1400.0, 300.0>,
+                                <0.0, -1500.0, 300.0>,
+                                <0.0, -1600.0, 300.0>,
+                                <0.0, -1700.0, 300.0>,
+                                <0.0, -1800.0, 300.0>,
+                                <0.0, -1900.0, 300.0>,
+                                <0.0, -2000.0, 300.0>,
+                            
+                            
+                                <120.0, 0.0,   600.0>,
+                                <0.0, 120.0,   600.0>,
+                                <0.0, 0.0,     600.0>,
+                                <0.0, -120.0,  600.0>,
+                                < -120.0, 0.0, 600.0>,
+                                <0.0, 100.0,   600.0>,
+                                <0.0, 200.0,   600.0>,
+                                <0.0, 300.0,   600.0>,
+                                <0.0, 400.0,   600.0>,
+                                <0.0, 500.0,   600.0>,
+                                <0.0, 600.0,   600.0>,
+                                <0.0, 700.0,   600.0>,
+                                <0.0, 800.0,   600.0>,
+                                <0.0, 900.0,   600.0>,
+                                <0.0, 1000.0,  600.0>,
+                                <0.0, 1100.0,  600.0>,
+                                <0.0, 1200.0,  600.0>,
+                                <0.0, 1300.0,  600.0>,
+                                <0.0, 1400.0,  600.0>,
+                                <0.0, 1500.0,  600.0>,
+                                <0.0, 1600.0,  600.0>,
+                                <0.0, 1700.0,  600.0>,
+                                <0.0, 1800.0,  600.0>,
+                                <0.0, 1900.0,  600.0>,
+                                <0.0, 2000.0,  600.0>,
+                                <0.0, -100.0,  600.0>,
+                                <0.0, -200.0,  600.0>,
+                                <0.0, -300.0,  600.0>,
+                                <0.0, -400.0,  600.0>,
+                                <0.0, -500.0,  600.0>,
+                                <0.0, -600.0,  600.0>,
+                                <0.0, -700.0,  600.0>,
+                                <0.0, -800.0,  600.0>,
+                                <0.0, -900.0,  600.0>,
+                                <0.0, -1000.0, 600.0>,
+                                <0.0, -1100.0, 600.0>,
+                                <0.0, -1200.0, 600.0>,
+                                <0.0, -1300.0, 600.0>,
+                                <0.0, -1400.0, 600.0>,
+                                <0.0, -1500.0, 600.0>,
+                                <0.0, -1600.0, 600.0>,
+                                <0.0, -1700.0, 600.0>,
+                                <0.0, -1800.0, 600.0>,
+                                <0.0, -1900.0, 600.0>,
+                                <0.0, -2000.0, 600.0>,
+                            
+
+                                <120.0, 0.0,   900.0>,
+                                <0.0, 120.0,   900.0>, 
+                                <0.0, 0.0,     900.0>,
+                                <0.0, -120.0,  900.0>,
+                                < -120.0, 0.0, 900.0>, 
+                                <0.0, 100.0,   900.0>,
+                                <0.0, 200.0,   900.0>,
+                                <0.0, 300.0,   900.0>,
+                                <0.0, 400.0,   900.0>,
+                                <0.0, 500.0,   900.0>,
+                                <0.0, 600.0,   900.0>,
+                                <0.0, 700.0,   900.0>,
+                                <0.0, 800.0,   900.0>,
+                                <0.0, 900.0,   900.0>,
+                                <0.0, 1000.0,  900.0>,
+                                <0.0, 1100.0,  900.0>,
+                                <0.0, 1200.0,  900.0>,
+                                <0.0, 1300.0,  900.0>,
+                                <0.0, 1400.0,  900.0>,
+                                <0.0, 1500.0,  900.0>,
+                                <0.0, 1600.0,  900.0>,
+                                <0.0, 1700.0,  900.0>,
+                                <0.0, 1800.0,  900.0>,
+                                <0.0, 1900.0,  900.0>,
+                                <0.0, 2000.0,  900.0>,
+                                <0.0, -100.0,  900.0>,
+                                <0.0, -200.0,  900.0>,
+                                <0.0, -300.0,  900.0>,
+                                <0.0, -400.0,  900.0>,
+                                <0.0, -500.0,  900.0>,
+                                <0.0, -600.0,  900.0>,
+                                <0.0, -700.0,  900.0>,
+                                <0.0, -800.0,  900.0>,
+                                <0.0, -900.0,  900.0>,
+                                <0.0, -1000.0, 900.0>,
+                                <0.0, -1100.0, 900.0>,
+                                <0.0, -1200.0, 900.0>,
+                                <0.0, -1300.0, 900.0>,
+                                <0.0, -1400.0, 900.0>,
+                                <0.0, -1500.0, 900.0>,
+                                <0.0, -1600.0, 900.0>,
+                                <0.0, -1700.0, 900.0>,
+                                <0.0, -1800.0, 900.0>,
+                                <0.0, -1900.0, 900.0>,
+                                <0.0, -2000.0, 900.0>,
+                            
+                            
+                                <120.0, 0.0,   1200.0>,
+                                <0.0, 120.0,   1200.0>,
+                                <0.0, 0.0,     1200.0>,
+                                <0.0, -120.0,  1200.0>,
+                                < -120.0, 0.0, 1200.0>,
+                                <0.0, 100.0,   1200.0>,
+                                <0.0, 200.0,   1200.0>,
+                                <0.0, 300.0,   1200.0>,
+                                <0.0, 400.0,   1200.0>,
+                                <0.0, 500.0,   1200.0>,
+                                <0.0, 600.0,   1200.0>,
+                                <0.0, 700.0,   1200.0>,
+                                <0.0, 800.0,   1200.0>,
+                                <0.0, 900.0,   1200.0>,
+                                <0.0, 1000.0,  1200.0>,
+                                <0.0, 1100.0,  1200.0>,
+                                <0.0, 1200.0,  1200.0>,
+                                <0.0, 1300.0,  1200.0>,
+                                <0.0, 1400.0,  1200.0>,
+                                <0.0, 1500.0,  1200.0>,
+                                <0.0, 1600.0,  1200.0>,
+                                <0.0, 1700.0,  1200.0>,
+                                <0.0, 1800.0,  1200.0>,
+                                <0.0, 1900.0,  1200.0>,
+                                <0.0, 2000.0,  1200.0>,
+                                <0.0, -100.0,  1200.0>,
+                                <0.0, -200.0,  1200.0>,
+                                <0.0, -300.0,  1200.0>,
+                                <0.0, -400.0,  1200.0>,
+                                <0.0, -500.0,  1200.0>,
+                                <0.0, -600.0,  1200.0>,
+                                <0.0, -700.0,  1200.0>,
+                                <0.0, -800.0,  1200.0>,
+                                <0.0, -900.0,  1200.0>,
+                                <0.0, -1000.0, 1200.0>,
+                                <0.0, -1100.0, 1200.0>,
+                                <0.0, -1200.0, 1200.0>,
+                                <0.0, -1300.0, 1200.0>,
+                                <0.0, -1400.0, 1200.0>,
+                                <0.0, -1500.0, 1200.0>,
+                                <0.0, -1600.0, 1200.0>,
+                                <0.0, -1700.0, 1200.0>,
+                                <0.0, -1800.0, 1200.0>,
+                                <0.0, -1900.0, 1200.0>,
+                                <0.0, -2000.0, 1200.0>
+                                ])
+    smokescreen.fxOffsets = smokes
+    Smokescreen(smokescreen)
+}
+#endif
+}
+int ZONE_BLUE = 0
+int ZONE_RED = 1
+table<entity, int> CurrentZone = {}
+#if SERVER
+void function PlayerBoundry(entity player){
+    while(IsValid(player)){
+            if(!IsAlive(player))
+                break
+            if(GetGameState() == eGameState.Playing){
+            vector origin = player.GetOrigin()
+            if(origin.x < GetMapOrigin().x && CurrentZone[player] == ZONE_BLUE){
+                print("passed")
+                TeleportPlayer(null, player)}
+            if(origin.x > GetMapOrigin().x && CurrentZone[player] == ZONE_RED){
+                print("passed")
+                TeleportPlayer(null, player)}}
+        WaitFrame()
+    }
+}
+
+#endif
+#if SERVER
+void function OnPlayerRespawn(entity player){
+    if(FlipsideEnabled()){
+		if(player.GetOffhandWeapons().len() != 0){
+	        if(!player.IsTitan() && !PlayerHasWeapon( player, "mp_ability_shifter_super" ) && !PlayerHasWeapon(player, "mp_titanability_phase_dash")){
+                player.TakeWeaponNow(player.GetOffhandWeapons()[OFFHAND_RIGHT].GetWeaponClassName())
+                player.GiveOffhandWeapon("mp_ability_shifter_super", OFFHAND_RIGHT)}
+            else if(player.IsTitan() && !PlayerHasWeapon( player, "mp_titanability_phase_dash" )){
+                if(!PlayerHasWeapon(player, "mp_titanability_tether_trap")){
+                player.TakeWeaponNow(player.GetOffhandWeapons()[2].GetWeaponClassName())
+                player.GiveOffhandWeapon("mp_titanability_phase_dash", 2, ["fd_phase_charges"])}
+                else{
+                    player.TakeWeaponNow(player.GetOffhandWeapons()[1].GetWeaponClassName())
+                    player.GiveOffhandWeapon("mp_titanability_phase_dash", 1, ["fd_phase_charges"])}
+                }
+            else if(player.IsTitan() && PlayerHasWeapon( player, "mp_titanability_phase_dash" )){
+                if(!player.GetOffhandWeapons()[2].HasMod("fd_phase_charges") && player.GetOffhandWeapons()[2].GetWeaponClassName() == "mp_titanability_phase_dash"){
+                    player.TakeWeaponNow("mp_titanability_phase_dash")
+                    player.GiveOffhandWeapon("mp_titanability_phase_dash", 2, ["fd_phase_charges"])
+                }
+            }
+        }
+        vector origin = player.GetOrigin()
+        if(!(player in CurrentZone)){
+            if((GetCurrentPlaylistVarInt("WallLocation", 0) == 1 || GetCurrentPlaylistVarInt("WallLocation", 0) == 3)){
+                if(origin.x > GetMapOrigin().x)
+                    CurrentZone[player] <- ZONE_BLUE
+                else
+                    CurrentZone[player] <- ZONE_RED
+            }
+            if((GetCurrentPlaylistVarInt("WallLocation", 0) == 2)){
+                if(origin.y > GetMapOrigin().y)
+                    CurrentZone[player] <- ZONE_BLUE
+                else
+                    CurrentZone[player] <- ZONE_RED
+            }
+        }
+        else if((player in CurrentZone)){
+            if((GetCurrentPlaylistVarInt("WallLocation", 0) == 1 || GetCurrentPlaylistVarInt("WallLocation", 0) == 3)){
+                if(origin.x > GetMapOrigin().x)
+                    CurrentZone[player] = ZONE_BLUE
+                else
+                    CurrentZone[player] = ZONE_RED
+            }
+            if((GetCurrentPlaylistVarInt("WallLocation", 0) == 2)){
+                if(origin.y > GetMapOrigin().y)
+                    CurrentZone[player] = ZONE_BLUE
+                else
+                    CurrentZone[player] = ZONE_RED
+            }
+        }
+        if(GetCurrentPlaylistVarInt("Smoke_wall", 0) == 1)
+            thread PlayerBoundry(player)
+    }
+}
+void function OnPlayerChangeLoadout(entity player, PilotLoadoutDef loadout){
+    OnPlayerRespawn(player)
+}
+bool function UnstuckPlayer(entity player, array<string> args){
+    print("Player " + player.GetUID() + " Used Unstuck at " + player.GetOrigin())
+    player.SetOrigin(<3000,2200,100>)
+    return true
+}
+
+
+vector function FindNearestSafeTeleport(entity player, vector targetPos, int severity){
+    if(severity >= 500){
+        print("problem")
+       return GetMapOrigin()
+    }
+    //itsif(!PlayerPosInSolid( player, <targetPos.x, targetPos.y, targetPos.z+severity> ))
+    //its    return <targetPos.x, targetPos.y, targetPos.z+severity>
+
+    if(!PlayerPosInSolid( player, <targetPos.x, targetPos.y, targetPos.z-severity> ))
+        return <targetPos.x, targetPos.y, targetPos.z-severity>
+
+    if(!PlayerPosInSolid( player, <targetPos.x, targetPos.y+severity, targetPos.z> ))
+        return <targetPos.x, targetPos.y+severity, targetPos.z>
+
+    if(!PlayerPosInSolid( player, <targetPos.x, targetPos.y-severity, targetPos.z> ))
+        return <targetPos.x, targetPos.y-severity, targetPos.z>
+
+        
+    if(!PlayerPosInSolid( player, <targetPos.x+severity, targetPos.y, targetPos.z> ))
+        return <targetPos.x+severity, targetPos.y, targetPos.z>
+
+    if(!PlayerPosInSolid( player, <targetPos.x-severity, targetPos.y, targetPos.z> ))
+        return <targetPos.x-severity, targetPos.y, targetPos.z>
+
+    return FindNearestSafeTeleport(player, targetPos, severity+5)
+}
+bool function PlayerPosInSolid( entity player, vector targetPos )
+{
+    int solidMask = TRACE_MASK_PLAYERSOLID
+    vector mins
+    vector maxs
+    int collisionGroup = TRACE_COLLISION_GROUP_PLAYER
+    array<entity> ignoreEnts = []
+    ignoreEnts.append( player ) //in case we want to check player's current pos
+    TraceResults result
+
+    mins = player.GetPlayerMins()
+    maxs = player.GetPlayerMaxs()
+    result = TraceHull( targetPos, targetPos + Vector( 0, 0, 1), mins, maxs, ignoreEnts, solidMask, collisionGroup )
+    if ( result.startSolid )
+        return true
+
+    return false
+
+}
+void function TeleportPlayer(entity ornull weapon, entity weaponOwner){
+    vector Angles = weaponOwner.EyeAngles()
+    vector Velocity = weaponOwner.GetVelocity()
+    vector origin = weaponOwner.GetOrigin()
+    if(!(weaponOwner in CurrentZone))
+    {
+        if((GetCurrentPlaylistVarInt("WallLocation", 0) == 1 ||  GetCurrentPlaylistVarInt("WallLocation", 0) == 2 || GetCurrentPlaylistVarInt("WallLocation", 0) == 4))
+        {
+            if(origin.x > GetMapOrigin().x)
+                CurrentZone[weaponOwner] <- ZONE_BLUE
+            else
+                CurrentZone[weaponOwner] <- ZONE_RED
+        }
+        if((GetCurrentPlaylistVarInt("WallLocation", 0) == 3))
+        {
+            if(origin.y > GetMapOrigin().y)
+                CurrentZone[weaponOwner] <- ZONE_BLUE
+            else
+                CurrentZone[weaponOwner] <- ZONE_RED
+        }
+    }
+    if(weapon != null && !(GetCurrentPlaylistVarInt("WallLocation", 0) == 0)){
+        print(weapon)
+    if(CurrentZone[weaponOwner] == ZONE_BLUE)
+        CurrentZone[weaponOwner] = ZONE_RED
+    else if(CurrentZone[weaponOwner] == ZONE_RED)
+        CurrentZone[weaponOwner] = ZONE_BLUE
+    print(CurrentZone[weaponOwner])
+    }
+    float airaccel = expect string(weaponOwner.kv.airAcceleration).tofloat()
+    if(weaponOwner.kv.airAcceleration != 0){
+        weaponOwner.kv.airAcceleration = 0}
+
+    vector TargetPos
+    int axis = GetRotateAxis()
+    if(axis == FlipY)
+    {
+        TargetPos = < origin.x, GetMapOrigin().y+(GetMapOrigin().y-origin.y), origin.z+2>
+        Angles.y = Angles.y - (180.0 + 2*(Angles.y-90))
+        Velocity.y = Velocity.y * -1
+    }
+    if(axis == FlipX)
+    {
+        TargetPos = < GetMapOrigin().x+(GetMapOrigin().x-origin.x), origin.y, origin.z+2>
+        Angles.y = Angles.y - (180.0 + 2*Angles.y)
+        Velocity.x = Velocity.x * -1
+    }
+    if(axis == Mirror)
+    {
+        TargetPos = < GetMapOrigin().x+(GetMapOrigin().x-origin.x), GetMapOrigin().y+(GetMapOrigin().y-origin.y), origin.z+2>
+        Angles.y = Angles.y - 180.0
+        Velocity.x = Velocity.x * -1
+        Velocity.y = Velocity.y * -1
+    }
+    if(axis == UpDown)
+    {
+        if(origin.z > GetMapOrigin().z)
+            TargetPos = < origin.x, origin.y, (origin.z - GetUpDownOffset()) + 2>
+        else
+            TargetPos = < origin.x, origin.y, (origin.z + GetUpDownOffset()) + 2>
+    }
+    if(axis == UpDownFlip)
+    {
+        TargetPos = <origin.x , origin.y,GetMapOrigin().z+(GetMapOrigin().z-origin.z)- 50>
+    }
+    Angles.y = Angles.y%360
+    if(PlayerPosInSolid(weaponOwner, TargetPos))
+    {
+        TargetPos = FindNearestSafeTeleport(weaponOwner, TargetPos, 1)
+    }
+    weaponOwner.SetOrigin(TargetPos)
+
+    weaponOwner.SetAngles(Angles)
+    
+    weaponOwner.SetVelocity(Velocity)
+
+    //Air accel fix stuff, very scuffed
+    if(expect string(weaponOwner.kv.airAcceleration).tofloat() < airaccel)
+        thread RestoreAirAccel(airaccel, weaponOwner)
+}
+void function RestoreAirAccel(float airaccel, entity player){
+    wait 0.2
+    if(IsValid(player)){
+    	player.kv.airAcceleration = airaccel
+	}
+}
+
+
+
+#endif

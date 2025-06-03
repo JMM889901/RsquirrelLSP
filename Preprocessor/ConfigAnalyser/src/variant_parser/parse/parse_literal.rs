@@ -1,6 +1,6 @@
 use parse_element::{find_next_valid_text_block};
 use peg::{ParseLiteral, RuleResult};
-use variant::SqVariant;
+use variant::SqFileVariant;
 use std::{sync::Arc, usize};
 
 use peg::{str::LineCol, Parse};
@@ -9,7 +9,7 @@ use PreprocessorParser::ast::{If, Node, AST};
 
 use super::*;
 
-impl ParseLiteral for SqVariant{
+impl ParseLiteral for SqFileVariant{
     fn parse_string_literal(&self, pos: usize, literal: &str) -> RuleResult<()> {
         match self.match_string_literal(pos, literal){
             LiteralMatch::Here(a) => RuleResult::Matched(a, ()),
@@ -19,7 +19,7 @@ impl ParseLiteral for SqVariant{
         }
     }
 }
-impl SqVariant{
+impl SqFileVariant{
     fn match_string_literal(&self, pos: usize, literal: &str) -> LiteralMatch{
         match_string_literal_internal(&self.content, &self.state, pos, literal)
     }
@@ -141,7 +141,7 @@ use ConfigPredictor::{get_states};
 //This is effectively just an alternate string converter to the recursive function
 //Logically it should return the same output - any [#] statements
 peg::parser!{
-    pub grammar variant_inout() for SqVariant{
+    pub grammar variant_inout() for SqFileVariant{
         #[no_eof]
         pub rule out_the_in() -> String =
             "THING" rest:out_the_in() {vec!["I SAW A THING".to_string(), rest].concat()}
@@ -162,7 +162,7 @@ fn text_parse(){
     let condition = Condition::term("DEBUG");
     let structure = Node::new((0, (len*3) + 6), AST::RunOn(input, condition));
     //println!("{}", result);
-    let file = SqVariant::generate(Arc::new(structure), SqCompilerState::one("DEBUG".to_string(), true));
+    let file = SqFileVariant::generate(&structure, SqCompilerState::one("DEBUG".to_string(), true));
     let result = variant_inout::out_the_in(&file).unwrap();
     println!("{:?}", result);
     assert!(result.contains("I SAW A THING"))

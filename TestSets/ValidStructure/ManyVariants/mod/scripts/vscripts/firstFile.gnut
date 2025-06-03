@@ -1,0 +1,54 @@
+#if SERVER
+int function server_or_dev(){
+    int x = 1
+    return x
+}
+#elseif CLIENT
+int function client_or_dev(){
+    int x = 1
+    return x
+}
+#endif
+#if DEV
+int function client_or_dev(){
+    int x = 1
+    return x
+}
+int function server_or_dev(){
+    int x = 1
+    return x
+}
+#elseif MP
+int function mp(){
+    int x = 1
+    return x
+}
+#endif
+#if EXTRA
+int function extra(){
+    int x = 1
+    return x
+}
+#endif
+
+#if DEV && MP
+int function mp(){
+    int x = 1
+    return x
+}
+#endif
+
+#if (SERVER && MP) || DEV
+int function server_and_mp_or_dev(){
+    int x = server_or_dev()
+    #if MP && EXTRA
+    int y = mp()
+    #elseif EXTRA 
+    int y = extra()
+    #else
+    int y = 0
+    #endif
+    int z = x + y
+    return z
+}
+#endif

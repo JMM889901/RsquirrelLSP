@@ -1,0 +1,35 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: ls
+      run: ls
+    - uses: actions/checkout@v4
+      with:
+        ref: v1.30.0
+        path: R2Northstar
+        repository: R2Northstar/NorthstarMods
+    - name: ls
+      run: ls ../R2Northstar/Northstar.Custom
+      working-directory: ./E2E
+    - name: Build
+      working-directory: ./E2E
+      run: cargo build --verbose
+    - name: Parse Northstar
+      working-directory: ./E2E
+      run: cargo run --features timed -- ../R2Northstar ../R2Northstar/.github/nativefuncs.json

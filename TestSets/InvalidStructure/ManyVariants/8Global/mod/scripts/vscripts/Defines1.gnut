@@ -1,0 +1,4 @@
+//global function globalfunc
+void function globalfunc(){
+    int x = 1
+}

@@ -1,31 +1,56 @@
-use std::{fs::{self, read_to_string}, sync::Arc};
+use std::{collections::HashMap, fs::{self, read_to_string}, hash::Hash, path::PathBuf, sync::Arc};
 
-use variant_parser::{variant::SqVariant, variant_inout, variant_inout_standard};
+use common::{FileInfo, FileType};
 use ConfigPredictor::get_states;
 use PreprocessorParser::*;
-use sq_file_variant::SqFileVariant;
+//use sq_file_variant::SqFileVariant;
+//pub use variant_parser::variant::SqFileVariant;
 mod variant_parser;
-pub mod sq_file_variant;
-pub fn get_file_varaints(input: &String, run_on: &String, name: &String) -> Vec<SqFileVariant>{
-    let node = parse_file(input, run_on);
+mod sq_file_variant;
+pub use sq_file_variant::SqFileVariant;
+pub fn get_file_varaints(file: FileInfo) -> Vec<SqFileVariant>{
+    let node = parse_file(&file.text(), file.run_on());
     let states = get_states(&node.ast);
-    println!("states");
-    for state in &states{
-        println!("{:?}", state.identifier());
-        println!("{:?}\n\n", state)
-    }
+    //println!("states");
+    //for state in &states{
+    //    println!("{:?}", state.identifier());
+    //    println!("{:?}\n\n", state)
+    //}
     let variants:Vec<SqFileVariant> = states.into_iter().map(|x| SqFileVariant::generate(&node, x)).collect();
     
 
-    for variant in &variants {
-        fs::create_dir_all(format!("./preprocessed{}", variant.state.to_path()));
-
-        let file = format!("./preprocessed{}/{}.pnut", variant.state.to_path(), name);
-        let text = variant.text();
-        fs::write(file, text).expect("Unable to write file");
-
-    }
+    //for variant in &variants {
+    //    fs::create_dir_all(format!("./preprocessed{}", variant.state.to_path()));
+//
+    //    let file = format!("./preprocessed{}/{}.pnut", variant.state.to_path(), file.name());
+    //    let text = variant.text();
+    //    fs::write(file, text).expect("Unable to write file");
+//
+    //}
     return variants;
+}
+
+#[test]
+fn integration_mp_only(){
+    let file_info = FileInfo::new("".to_string(), PathBuf::from(""), "MP".to_string(), FileType::RSquirrel);
+    file_info.set_text("".to_string());
+    let result = get_file_varaints(file_info);
+    println!("{:?}", result);
+    assert_eq!(result.len(), 1);
+}
+
+pub fn force_get_states_statement(text: String) -> Vec<HashMap<String, bool>>{
+    //I cannot express how HORRENDOUSLY inefficient this is, but it works for now
+    //Code\AST Generator\analyser\src\load_order.rs
+    
+    let condition = parse_condition_expression(&text);
+    let node = ast::AST::RunOn(vec![], condition);
+    let states = get_states(&node);
+    let mut result = Vec::new();
+    for state in states{
+        result.push(state.0);
+    }
+    return result;
 }
 
 
@@ -82,7 +107,7 @@ fn relative_to_global_pos(variant: &SqFileVariant, pos: usize) -> Option<usize>{
 
 #[cfg(test)]
 #[test]
-fn test_extract_conditions(){
+fn test_positions_match(){
     let input = r#"#if SERVER
     this should change the first line position
     #endif
@@ -108,7 +133,9 @@ fn test_extract_conditions(){
     this is a different value
     #endif
     "#;
-    let result = get_file_varaints(&input.to_string(), &"(SERVER || CLIENT) && MP".to_string(), &"simple_file".to_string());
+    let file_info = FileInfo::new("test_extract_conditions".to_string(), PathBuf::from("test"), "(SERVER || CLIENT) && MP".to_string(), FileType::RSquirrel);
+    file_info.set_text(input.to_string());
+    let result = get_file_varaints(file_info);
     //println!("{:?}", result);
 
     let global_convert = global_to_relative_pos(&result[0], 250);
@@ -127,31 +154,73 @@ fn test_extract_conditions(){
 
 #[test]
 fn no_branches(){
-
+    let input = "#if SERVER || CLIENT || MP
+    hi
+    #endif";
+    //Test run_on filtering
+    let file_info = FileInfo::new("test_extract_conditions".to_string(), PathBuf::from("test"), "SERVER && MP".to_string(), FileType::RSquirrel);
+    file_info.set_text(input.to_string());
+    let result = get_file_varaints(file_info);
+    println!("{:?}", result);
+    assert_eq!(result.len(), 1);
 }
 
 #[test]
 fn if_elseif(){
-
+    let input = "#if SERVER || CLIENT || MP
+    hi
+    #else if SERVER
+    hi2
+    #endif";
+    //Test run_on filtering
+    let file_info = FileInfo::new("test_extract_conditions".to_string(), PathBuf::from("test"), "SERVER || CLIENT || UI".to_string(), FileType::RSquirrel);
+    file_info.set_text(input.to_string());
+    let result = get_file_varaints(file_info);
+    println!("{:?}", result);
+    //Maybe we can minimize this, *technically* the MP variant is irrelevant here
+    assert_eq!(result.len(), 6);
 }
 
 #[test]
 fn nested(){
-    
+    let input = "#if SERVER || CLIENT || MP
+    hi
+    #if SERVER
+    hi2
+    #endif
+    #endif";
+    //Test run_on filtering
+    let file_info = FileInfo::new("test_extract_conditions".to_string(), PathBuf::from("test"), "SERVER || CLIENT || UI".to_string(), FileType::RSquirrel);
+    file_info.set_text(input.to_string());
+    let result = get_file_varaints(file_info);
+    println!("{:?}", result);
+    assert_eq!(result.len(), 6);
 }
 
 #[test]
 fn if_statement(){
-
+    let input = "#if SERVER || CLIENT
+    hi
+    #endif";
+    //Test run_on filtering
+    let file_info = FileInfo::new("test_extract_conditions".to_string(), PathBuf::from("test"), "SERVER || CLIENT || UI".to_string(), FileType::RSquirrel);
+    file_info.set_text(input.to_string());
+    let result = get_file_varaints(file_info);
+    println!("{:?}", result);
+    assert_eq!(result.len(), 3);
 }
 
 
 #[test]
 fn big_file_parses(){
     //Due to the size of the file hardcording the right answer isnt practical, this is just to test that things look "about right"
-    let input = read_to_string("../test/SingleFile.nut").unwrap();
-    let result = get_file_varaints(&input.to_string(), &"MP || UI".to_string(), &"_items".to_string());
-    println!("{:?}", result.len())
+    //let input = read_to_string("../test/SingleFile.nut").unwrap();
+    let file_info = FileInfo::new("SingleFile.nut".to_string(), PathBuf::from("../test/SingleFile.nut"), "MP || UI".to_string(), FileType::RSquirrel);
+    let result = get_file_varaints(file_info);
+    println!("{:?}", result.len());
+    for variant in &result {
+        println!("{:?}", variant.state);
+    }
+    //CLIENT, UI, SP, SERVER
+    assert!(result.len() == 8);
 }
-
-

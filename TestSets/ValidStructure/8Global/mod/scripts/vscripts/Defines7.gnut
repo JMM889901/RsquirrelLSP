@@ -1,0 +1,10 @@
+#if RAND
+global function globalfunc
+#endif
+
+#if !RAND
+global function globalfunc
+#endif
+void function globalfunc(){
+    int x = 1
+}

@@ -1,0 +1,115 @@
+global function ClassWar_init
+
+//Struct
+struct{
+    PilotLoadoutDef& StoredPilotLoadout
+    PilotLoadoutDef& StoredPilotLoadoutMilitia
+    PilotLoadoutDef& StoredPilotLoadoutIMC
+}file
+
+//Init
+void function ClassWar_init()
+{
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "ClassWar", ["#SETTING_DISABLED", "#CLASSWAR_TEAMS", "#CLASSWAR_GLOBAL"], "0")
+    #if SERVER
+    AddCallback_OnPlayerRespawned( OnPlayerRespawn )
+    AddCallback_OnPlayerGetsNewPilotLoadout( OnPlayerChangeLoadout)
+    AddCallback_GameStateEnter( eGameState.Playing, onstart )
+    #endif
+}
+#if SERVER
+//Bool
+bool function ClassWarEnabled()
+{
+    return (GetCurrentPlaylistVarInt("ClassWar", 0) == 1 || GetCurrentPlaylistVarInt("ClassWar", 0) == 2)
+}
+//Callbacks
+void function OnPlayerChangeLoadout(entity player, PilotLoadoutDef loadout)
+{
+    if(ClassWarEnabled() && GetGameState() == eGameState.Playing)
+    {
+        OnPlayerRespawn(player)
+    }
+}
+//if(ClassWarEnabled() && GetGameState() == eGameState.Playing)
+
+void function OnPlayerRespawn(entity player){
+    if(ClassWarEnabled() && player.GetOffhandWeapons().len() != 0 && player.GetMainWeapons().len() !=0 && GetGameState() == eGameState.Playing)
+    {
+        foreach(entity weapon in player.GetMainWeapons())
+            player.TakeWeaponNow(weapon.GetWeaponClassName())
+        foreach(entity weapon in player.GetOffhandWeapons())
+            player.TakeWeaponNow(weapon.GetWeaponClassName())
+        PopulatePilotLoadout(player)
+    }
+}
+//GetPilotLoadoutFromPersistentData
+void function onstart()
+{
+    if(GetCurrentPlaylistVarInt("ClassWar", 0) == 2)
+    {
+        if(GetPlayerArrayOfTeam( TEAM_MILITIA ).len() > 0)
+        {
+            file.StoredPilotLoadoutMilitia = GetActivePilotLoadout(GetPlayerArrayOfTeam( TEAM_MILITIA )[RandomInt(GetPlayerArrayOfTeam( TEAM_MILITIA ).len())])
+        }
+        if(GetPlayerArrayOfTeam( TEAM_IMC ).len() > 0)
+        {
+            file.StoredPilotLoadoutIMC = GetActivePilotLoadout(GetPlayerArrayOfTeam( TEAM_IMC )[RandomInt(GetPlayerArrayOfTeam( TEAM_IMC ).len())])
+        }
+    }
+    if(GetCurrentPlaylistVarInt("ClassWar", 0) == 1)
+    {
+        file.StoredPilotLoadout = GetActivePilotLoadout(GetPlayerArray()[RandomInt(GetPlayerArray().len())])
+    }
+    if(ClassWarEnabled())
+    {
+    foreach(entity player in GetPlayerArray())
+        {
+            OnPlayerRespawn(player)
+        }
+    }
+}
+// Functions
+void function PopulatePilotLoadout(entity player)
+{
+    if(GetCurrentPlaylistVarInt("ClassWar", 0) == 2)
+    {
+        if(player.GetTeam() == TEAM_IMC)
+        {
+            foreach(string mod in file.StoredPilotLoadoutIMC.primaryMods)
+                print(mod)
+            player.GiveWeapon(       file.StoredPilotLoadoutIMC.primary)
+            player.GiveWeapon(       file.StoredPilotLoadoutIMC.secondary)
+            player.GiveWeapon(       file.StoredPilotLoadoutIMC.weapon3)
+            player.GiveOffhandWeapon(file.StoredPilotLoadoutIMC.ordnance, OFFHAND_RIGHT)
+            player.GiveOffhandWeapon(file.StoredPilotLoadoutIMC.special, OFFHAND_LEFT)
+        }
+        if(player.GetTeam() == TEAM_MILITIA)
+        {
+            foreach(string mod in file.StoredPilotLoadoutMilitia.primaryMods)
+                print(mod)
+            
+            player.GiveWeapon(       file.StoredPilotLoadoutMilitia.primary)
+            player.GiveWeapon(       file.StoredPilotLoadoutMilitia.secondary)
+            player.GiveWeapon(       file.StoredPilotLoadoutMilitia.weapon3)
+            player.GiveOffhandWeapon(file.StoredPilotLoadoutMilitia.ordnance, OFFHAND_RIGHT, file.StoredPilotLoadoutMilitia.ordnanceMods)
+            player.GiveOffhandWeapon(file.StoredPilotLoadoutMilitia.special, OFFHAND_LEFT,   file.StoredPilotLoadoutMilitia.specialMods)
+        }
+    }
+    if(GetCurrentPlaylistVarInt("ClassWar", 0) == 1)
+    {
+        foreach(string mod in file.StoredPilotLoadout.primaryMods)
+            print("primary mod "+mod)
+        player.GiveWeapon(       file.StoredPilotLoadout.primary)
+        foreach(string mod in file.StoredPilotLoadout.secondaryMods)
+            print("seconary mod "+mod)
+        player.GiveWeapon(       file.StoredPilotLoadout.secondary)
+        foreach(string mod in file.StoredPilotLoadout.weapon3Mods)
+            print("tertiary mod "+mod)
+        player.GiveWeapon(       file.StoredPilotLoadout.weapon3)
+
+        player.GiveOffhandWeapon(file.StoredPilotLoadout.ordnance, OFFHAND_RIGHT, file.StoredPilotLoadout.ordnanceMods)
+        player.GiveOffhandWeapon(file.StoredPilotLoadout.special, OFFHAND_LEFT,   file.StoredPilotLoadout.specialMods)
+    }
+}
+#endif

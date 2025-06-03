@@ -1,23 +1,50 @@
+use core::panic;
 use std::cell::RefCell;
+use std::clone;
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{format, Debug};
+use std::hash::Hash;
 use std::io::Write;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Weak};
 
+use analysis_common::{CompiledState, RunPrimitiveInfo};
+use common::FileInfo;
+use load_order::{FilePreAnalysis};
+use single_file::{analyse, AnalysisState};
 use ASTParser::error::Error;
+use analysis_common::spanning_search::{SpanningSearch, Traversable, TraversableMap};
+use analysis_common::variable::{Variable, VariableReference, VariableSearch};
 use ConfigAnalyser::get_file_varaints;
 use ASTParser::ast::{Element, Type, AST};
 use ASTParser::grammar::squirrel_ast;
 use ASTParser::SquirrelParse;
+use rayon::prelude::*;
 
-pub struct Scope{
+pub mod load_order;
+pub mod single_file;
+
+pub fn analyse_state(file: Arc<FilePreAnalysis>) -> Arc<Scope> {//should this return anything? it technically just does everything inplace
+    
+    let scope = Scope::new((0, file.globalinfo.primitive.file.len()));
+    let steps = &file.clone().globalinfo.primitive.ast;
+    find_funcs(scope.clone(), &steps);
+    let state = Arc::new(RwLock::new(AnalysisState::new(file.clone(), scope.clone())));
+    analyse(state.clone(), &steps, file.untyped);
+    return scope.clone();
+}
+
+pub struct Scope{//TODO: make most of these Traversable
     pub range: (usize, usize),
-    pub vars: RwLock<Vec<Arc<Variable>>>,//TODO: Hashmap these
-    pub types: RwLock<Vec<Arc<TypeDef>>>,
-    pub children: RwLock<Vec<Arc<Scope>>>,
+    pub vars: TraversableMap<String, Variable>,
+    pub references: Traversable<VariableReference>,
+    pub types: TraversableMap<String, TypeDef>,
+    pub children: Traversable<Scope>,
     pub errors: RwLock<Vec<Element<LogicError>>>,
-    pub parent: Option<Arc<Scope>>,//also used to refer to previous file in load order
-    pub global_names: RwLock<HashMap<String, bool>>,
+    pub parent: Option<Weak<Scope>>,//also used to refer to previous file in load order
+    pub global: TraversableMap<String, GlobalBridge>,
+    //Global functions are stored here, as they are not in the scope of the file
+    //It is far too late in the project to be asking this
+    //But why the fuck are globals even stored here
     pub has_return: RwLock<bool>,
 }
 impl Debug for Scope{
@@ -28,56 +55,231 @@ impl Debug for Scope{
             .field("types", &self.types)
             .field("children", &self.children)
             .field("errors", &self.errors)
-            .field("global_names", &self.global_names)
+            .field("global", &self.global)
             .field("has_return", &self.has_return)
             .finish()
     }
 }
+
+impl SpanningSearch<Scope> for Scope{
+    fn range(&self) -> (usize, usize) {
+        return self.range
+    }
+}
+
 impl Scope{
     pub fn new(range: (usize, usize)) -> Arc<Self>{
         Arc::new(Scope{
             range,
-            vars: RwLock::new(Vec::new()),
-            types: RwLock::new(Vec::new()),
-            children: RwLock::new(Vec::new()),
+            vars: TraversableMap::new(),
+            types: TraversableMap::new(),
+            children: Traversable::new(),
+            references: Traversable::new(),
             errors: RwLock::new(Vec::new()),
             parent: None,
-            global_names: RwLock::new(HashMap::new()),
+            global: TraversableMap::new(),
             has_return: RwLock::new(false),
         })
     }
-    pub fn new_parent(range: (usize, usize), parent: Arc<Scope>) -> Arc<Self>{
+    pub fn new_parent(range: (usize, usize), parent: Weak<Scope>) -> Arc<Self>{
         Arc::new(Scope{
             range,
-            vars: RwLock::new(Vec::new()),
-            types: RwLock::new(Vec::new()),
-            children: RwLock::new(Vec::new()),
+            vars: TraversableMap::new(),
+            types: TraversableMap::new(),
+            children: Traversable::new(),
+            references: Traversable::new(),
             errors: RwLock::new(Vec::new()),
             parent: Some(parent),
-            global_names: RwLock::new(HashMap::new()),
+            global: TraversableMap::new(),
             has_return: RwLock::new(false),
         })
     }
     pub fn add_child(parent: Arc<Self>, range: (usize, usize)) -> Arc<Self>{
-        let child = Scope::new_parent(range, parent.clone());
-        let mut children = parent.children.write().unwrap();        
-        children.push(child.clone());
+        let child = Scope::new_parent(range, Arc::downgrade(&parent));
+        parent.children.add_arc(child.clone());       
         return child;
     }
+    pub fn find_declaration(&self, pos: usize) -> Vec<Arc<VariableReference>>{
+        if pos + 1 < self.range.0 || pos > self.range.1 + 1{
+            panic!("Position out of range: {} not in {:?}", pos, self.range);
+            return vec![];
+        }
+        //Check if its in a child
+        let res: Vec<Arc<VariableReference>> = self.references.get_pos_source(pos, 2);
+        if res.len() > 0{
+            return res;
+        }
+        for child in self.children.get_pos(pos, 2){
+            let res = child.find_declaration(pos);
+            if res.len() > 0{
+                return res;
+            }//I dont like that this performs excess searches, but somethings up
+        }
+        return vec![];
+    }
+    pub fn find_uses(&self, pos: usize) -> Vec<Arc<VariableReference>>{
+        //Check if we are hovering over a global definition
+        let global = self.global.get_pos(pos, 2);
+        let mut res = Vec::new();
+        if global.len() > 0{//Global shoudl be a single element, but just in case
+            for GlobalBridge{ func, global } in global.iter().map(|x| x.as_ref()){
+                //Grab all references to the base function
+                let func_refs = func.get_valid_references();
+                res.extend(func_refs.iter().map(|x| x.clone()));
+                //Grab all references to the global function
+                let glob_refs = global.get_valid_references();
+                res.extend(glob_refs.iter().map(|x| x.clone()));
+            }
+            if res.len() > 0{
+                return res;
+            }
+            //This is kinda sketchy, I should phase out GlobalBridge entirely now that
+            //Token identifier correctly uses variables
+        }
+
+
+        //let mut res: Vec<Arc<VariableReference>> = self.references.get_pos_target(pos, 2);
+        //Yeah so i forgot you can like, reference something in another scope, because you know, functions exist
+
+        let res = self.vars.get_pos(pos, 2);
+        let mut res = res.iter().map(|x| x.get_valid_references()).flatten().collect::<Vec<_>>();
+        //TODO: Nesting the search is expensive since logically if we find something here there almost certainly wont be anything in the children
+        if res.len() > 0{
+            return res;
+        }
+        for child in self.children.get_pos(pos, 2) {
+            res.extend(child.find_uses(pos));
+            if res.len() > 0{
+                return res;
+            }//I dont like that this performs excess searches, but somethings up
+        }
+        if res.len() > 0{
+            return res;
+        }
+        //Shits fucked bud
+        //let all_refs = self.all_references();
+        //for ref_ in all_refs.iter(){
+        //    if ref_.target.range_passes(pos, 2){
+        //        res.push(ref_.clone());
+        //    }
+        //}
+        return res;
+
+    }
+    pub fn all_references(&self) -> Vec<Arc<VariableReference>>{
+        let mut references = Vec::new();
+        for child in self.children.get(){
+            references.extend(child.all_references());
+        }
+        references.extend(self.references.get());
+        return references;
+    }
+
+    pub fn all_children_rec(&self) -> Vec<Arc<Scope>>{
+        let mut children = Vec::new();
+        for child in self.children.get(){
+            children.push(child.clone());
+            children.extend(child.all_children_rec());
+        }
+        return children;
+    }
+
+    //pub fn find_declaration_slow(&self, pos: usize) -> Vec<Element<AST>>{
+    //    //Its slow but i am more confident in it
+    //    let all_references = self.all_references();
+    //    all_references.iter().filter(|x| x.source.range.0 <= pos + 1 && x.source.range.1 + 1 >= pos).map(|x| x.target.ast().clone()).collect()
+    //}
+    
+    pub fn debuginfo(&self) -> String{
+        //Get all references
+        //let references = format!("References: {}", self.all_references().iter().map(|x| x.text_nice()).collect::<String>());
+        let children = self.children.get();
+        let mut references = String::new();
+        for child in children{
+            references.push_str(&format!("from {} to {} ", child.range.0, child.range.1));
+            for ref_ in child.references.get(){
+                references.push_str(&format!("\n{:?} ", ref_.text_nice()));
+            }
+        }
+        //Get all children ranges
+        let mut children_ranges = String::new();
+        for child in self.children.get(){
+            children_ranges.push_str(&format!("{:?} ", child.range));
+        }
+        //Get all vars
+        let mut vars = String::new();
+        for (_, var) in self.vars.get().iter(){
+            vars.push_str(&format!("{:?} ", var.ast().range));
+        }
+
+        return format!("Scope: {:?} \n Vars: {} \n Children: {} \n References: {}", self.range, vars, children_ranges, references);
+    }
 }
+#[cfg(test)]
+mod scope_tests;
 
 #[derive(Debug, Clone)]
 pub enum LogicError{
     UndefinedVariableError(String),
+    UndefinedVariableErrorConditional(Vec<CompiledState>, String),
     DoesNotReturnError,
     SyntaxError(Error),
+    SyntaxWarning(Error),
+}
+
+impl LogicError{
+    pub fn render(&self, run: &FilePreAnalysis) -> String {
+        let mut text = format!("Error in {}\n", run.globalinfo.primitive.context.string_out_simple());
+        match self{
+            LogicError::UndefinedVariableError(name) => {
+                text.push_str(&format!("Undefined variable: {}", name));
+            }
+            LogicError::UndefinedVariableErrorConditional(cond, name) => {
+                let cond_text = cond.iter().map(|x| x.string_out_simple()).collect::<Vec<_>>().join(" OR ");
+                //TODO: bit dumb init
+                let cond_text = cond_text.replace("&", " && ");
+                text.push_str(&format!("Variable {} may not be defined, try specify one of {}", name, cond_text ));
+            }
+            LogicError::SyntaxError(err_int) => {
+                text.push_str(&format!("{:?}", err_int));
+            }
+            LogicError::SyntaxWarning(err_int) => {
+                text.push_str(&format!("{:?}", err_int));
+            }
+            LogicError::DoesNotReturnError => {
+                text.push_str(&format!("Function does not return"));
+            }
+        }
+        return text;
+    }
 }
 
 #[derive(Debug)]
-pub struct Variable{//These types are mostly here for later additional implementations, for now they are just ASTs
-    pub ast: Element<AST>,//Bad and scary deep copy
-    //
-    //More probably needed
+pub struct GlobalBridge{
+    func: Arc<Variable>,//We cant exactly globalise another files function
+    global: Arc<Variable>,
+}//Globals are registered elsewhere, this allows me to map the abstract "global" accross files to the specific function in the file
+
+impl SpanningSearch<GlobalBridge> for GlobalBridge{
+    fn range(&self) -> (usize, usize) {
+        return self.global.ast().range;
+    }
+    fn range_passes(&self, pos: usize, leeway: usize) -> bool {
+        //Pass if either the global declaration or the function passes
+        let range = self.global.ast().range;
+        if range.0 <= pos + leeway && range.1 + leeway >= pos{
+            return true
+        }
+        if let AST::Function { name, args, returns, actions } = self.func.ast().value.as_ref(){
+            let range = name.range;
+            if range.0 <= pos + leeway && range.1 + leeway >= pos{
+                return true
+            }
+        } else if range.0 <= pos + leeway && range.1 + leeway >= pos{
+            return true//I think externals from json files hit this
+        }
+        return false
+    }
 }
 
 #[derive(Debug)]
@@ -85,60 +287,119 @@ pub struct TypeDef{
     pub ast: Element<AST>,//Bad and scary deep copy
     pub name: String,//Not handling types properly yet, just a "does it exist"
 }
+impl SpanningSearch<TypeDef> for TypeDef{
+    fn range(&self) -> (usize, usize) {
+        return self.ast.range;
+    }
+}
 
 
 
-pub fn generate_asts(text: &String, run_on: &String, filename: &String) -> Vec<(HashMap<String, bool>, Vec<Element<AST>>)> {
-    let variants = get_file_varaints(text, run_on, filename);
-    let mut asts: Vec<(HashMap<String, bool>, Vec<Element<AST>>)> = Vec::new();
-    for variant in variants{
+pub fn generate_asts(file: FileInfo, id: usize) -> Vec<RunPrimitiveInfo> {
+    #[cfg(feature = "timed")]
+    let start = std::time::Instant::now();
+    let variants = get_file_varaints(file.clone());
+    #[cfg(feature = "timed")]
+    {
+        let duration = std::time::Instant::now().checked_duration_since(start).unwrap_or_default();
+        file.set_preproc_time(duration);
+    }
+    #[cfg(feature = "timed")]
+    let start = std::time::Instant::now();
+    //for variant in variants{
+    let asts = variants.into_par_iter().map(|variant| {
         let parse_data = SquirrelParse::empty();
         let offset = RefCell::new(0);
-        let parse = squirrel_ast::file_scope(&variant, &offset, &parse_data);
-        asts.push((variant.state.0, parse.unwrap())); //BAD NOT GOOD
+        //println!("parsing variant: {:?}", variant.state.0);
+        #[cfg(debug_assertions)]
+        let parse = squirrel_ast::file_scope_dbg(&variant, &offset, &parse_data);
+        #[cfg(not(debug_assertions))]
+        let parse = squirrel_ast::file_scope_rls(&variant, &offset, &parse_data);
+        let mut parse = parse.unwrap();
+        let errs = parse_data.errs.read().unwrap();
+        for err in errs.iter(){
+            let ast = AST::Error(*err.value.clone());
+            let elem = Element::new(ast, err.range.clone());
+            parse.push(elem);
+        }
 
+        //asts.push((variant.state.0, parse.unwrap())); //BAD NOT GOOD
+        //asts.push(RunPrimitiveInfo::new(file.clone(), variant.state.0.into(), id, parse));
+        let mut ast = RunPrimitiveInfo::new(file.clone(), variant.state.0.into(), id, parse);
+        ast
+    }).collect::<Vec<_>>();
+    #[cfg(feature = "timed")]
+    {
+        let duration = std::time::Instant::now().checked_duration_since(start).unwrap_or_default();
+        file.set_sq_parse_time(duration);
     }
     return asts;
 }
 
-pub fn get_variable(scope: Arc<Scope>, name: &String) -> Option<Arc<Variable>>{
-    let vars = scope.vars.read().unwrap();
-    for var in vars.iter(){
-        match var.ast.value.as_ref(){
-            AST::Function { name: var_name, args, returns, actions } => {
-                if var_name.value.as_ref() == name{
-                    return Some(var.clone());
-                }
-            }
-            AST:: Declaration { name: var_name, vartype, value } => {
-                if var_name.value.as_ref() == name{
-                    return Some(var.clone());
-                }
-            }
-            AST::ConstDeclaration { name: var_name, vartype, value } => {
-                if var_name.value.as_ref() == name{
-                    return Some(var.clone());
-                }
-            }
-            _ => {}
-        }
-        
+pub fn get_variable_local(scope: Arc<Scope>, name: &String) -> Option<Arc<Variable>>{
+    //Will traverse scopes, will not traverse globals
+    let var = scope.vars.index(name);
+    if let Some(var) = var{
+        return Some(var.clone());
     }
     if let Some(parent) = &scope.parent{
-        return get_variable(parent.clone(), name);
+        if let Some(parent) = parent.upgrade(){
+            return get_variable_local(parent.clone(), name);
+        }
     }
+
     return None;
 }
 
-pub fn get_type(scope: Arc<Scope>, name: &String) -> Option<Arc<TypeDef>>{
-    let types = scope.types.read().unwrap();
-    for type_def in types.iter(){
-        if type_def.name == *name{
-            return Some(type_def.clone());
-        }
+pub fn get_variable(scope: Arc<Scope>, state: Arc<RwLock<AnalysisState>>, name: &String) -> VariableSearch{
+    match scope.vars.index(name){
+        Some(var) => {
+            return VariableSearch::Single(var.clone());//Todo: I should differ based on WHAT the variable is
+        },
+        None => {}
     }
     if let Some(parent) = &scope.parent{
-        return get_type(parent.clone(), name);
+        if let Some(parent) = parent.upgrade(){
+            return get_variable(parent.clone(), state, name);
+        }
+    }
+    //Begin searching in the globals
+    let token = state.read().unwrap().file.get_global_internal(name.to_string());
+    //println!("Searching for {} in globals ", name);
+    return token;
+    //Below is now redundant since GlobalSeardh no longer exists
+    //match token{
+    //    GlobalSearch::Single(var, source) => {
+    //        return VariableSearch::Single(var);
+    //    },
+    //    GlobalSearch::Multi(vars) => {
+    //        let mut result = Vec::new();
+    //        for (condition, var, source) in vars{
+    //            result.push(var);
+    //        }
+    //        return VariableSearch::Multi(result);
+    //    },
+    //    GlobalSearch::MultiIncomplete(vars) => {
+    //        let mut result = Vec::new();
+    //        for (condition, var, source) in vars{
+    //            result.push(var);
+    //        }
+    //        return VariableSearch::MultiIncomplete(result);
+    //    },
+    //    _ => {}
+    //}
+    //return VariableSearch::None;
+}
+
+
+pub fn get_type(scope: Arc<Scope>, name: &String) -> Option<Arc<TypeDef>>{
+    if let Some(var) = scope.types.index(name){
+        return Some(var.clone());
+    }
+    if let Some(parent) = &scope.parent{
+        if let Some(parent) = parent.upgrade(){
+            return get_type(parent.clone(), name);
+        }
     }
     return None;
 }
@@ -147,291 +408,24 @@ pub fn find_funcs(scope: Arc<Scope>, steps: &Vec<Element<AST>>) {
     for step in steps{
         match step.value.as_ref(){
             AST::Function { name, args, returns, actions } => {
-                let mut vars = scope.vars.write().unwrap();
-                vars.push(Arc::new(Variable{ast: step.clone()}));//Should functions be in the vars list? they basically are
+                scope.vars.add(name.value.to_string(), Variable::new(step.clone()));
             },
             _ => {}
         }
     }
 }
 
-pub fn analyse_scope(scope: Arc<Scope>, steps: &Vec<Element<AST>>, untyped: bool){
-    for step in steps{
-        analyse_step(scope.clone(), step, untyped);
-    }
-}
-
-pub fn analyse_step(scope: Arc<Scope>, step: &Element<AST>, untyped: bool){
-    match step.value.as_ref(){
-        AST::Global(name) => {
-            let mut global_names = scope.global_names.write().unwrap();
-            global_names.insert(name.clone(), true);
-        }
-        AST::Typedef { name, sqtype } => {
-            let mut types = scope.types.write().unwrap();
-            let name = *name.value.clone();
-            types.push(Arc::new(TypeDef{ast: step.clone(), name }));
-        }
-        
-        AST::Declaration { name, vartype, value } => {
-            if let Some(value) = value{
-                analyse_step(scope.clone(), &value, untyped);
-            }
-            let mut vars = scope.vars.write().unwrap();
-            vars.push(Arc::new(Variable{ast: step.clone()}));
-        }
-        AST::ConstDeclaration { name, vartype, value } => {
-            let mut vars = scope.vars.write().unwrap();
-            //Todo: raise error if given a none-constant value
-            //TODO: This should be handled earlier than here
-            vars.push(Arc::new(Variable{ast: step.clone()}));
-        }
-        AST::EnumDeclaration { global,  name } => {
-            let mut types = scope.types.write().unwrap();
-            let name = *name.value.clone();
-            types.push(Arc::new(TypeDef{ast: step.clone(), name }));
-        }
-        AST::StructDeclaration { global, name, attributes } => {
-            let mut types = scope.types.write().unwrap();
-            let name = *name.value.clone();
-            types.push(Arc::new(TypeDef{ast: step.clone(), name }));
-        }
-        AST::Assignment { var, value } => {
-            let vars = scope.vars.read().unwrap();
-            analyse_step(scope.clone(), &var, untyped);
-            analyse_step(scope.clone(), &value, untyped);
-            //Todo: check if var is mutable
-        }
-        AST::If { condition, actions } => {
-            if let Some(condition) = condition{//if without a condition is shorthand for else, this is dumb but it is what most closely 
-                analyse_step(scope.clone(), &condition, untyped); //resembles the squirrel functionality
-            }
-            let scope = Scope::add_child(scope, step.range);
-            analyse_scope(scope, actions, untyped);
-        }
-        AST::While { condition, actions } => {
-            let scope = Scope::add_child(scope, step.range);
-            if let Some(condition) = condition{
-                analyse_step(scope.clone(), &condition, untyped);
-            }
-            analyse_scope(scope, actions, untyped);
-        }
-        AST::ForEach { iterators, iterable, actions } => {
-            let scope = Scope::add_child(scope, step.range);
-            for iterator in iterators{
-                analyse_step(scope.clone(), &iterator, untyped);
-            }
-            analyse_step(scope.clone(), &iterable, untyped);
-            analyse_scope(scope, actions, untyped);
-        }
-        AST::For { init, condition, increment, actions} => {
-            let scope = Scope::add_child(scope, step.range);
-            if let Some(init) = init{
-                analyse_step(scope.clone(), &init, untyped);
-            }
-            if let Some(condition) = condition{
-                analyse_step(scope.clone(), &condition, untyped);
-            }
-            if let Some(increment) = increment{
-                analyse_step(scope.clone(), &increment, untyped);
-            }
-            analyse_scope(scope, actions, untyped);
-        }
-        AST::Switch { condition, cases, default } => {
-            let scope = Scope::add_child(scope, step.range);
-            analyse_step(scope.clone(), &condition, untyped);
-            let mut start = step.range.0;
-            for (case, actions) in cases{
-                for condition in case{
-                    analyse_step(scope.clone(), &condition, untyped);
-                }
-                let range = (actions.first().map(|a| a.range.0).unwrap_or(0),
-                    actions.last().map(|a| a.range.0).unwrap_or(0));
-                start = range.1;
-                let scope = Scope::add_child(scope.clone(), range);
-                analyse_scope(scope, actions, untyped);
-            }
-            if let Some(default) = default{
-                let scope = Scope::add_child(scope.clone(), default.last().map(|x| x.range).unwrap_or((start, step.range.1)));
-                analyse_scope(scope, default, untyped);
-            }
-        }
-        AST::Return(value) => {
-            if let Some(value) = value{
-                analyse_step(scope.clone(), &value, untyped);
-            }
-            let mut has_return = scope.has_return.write().unwrap();
-            *has_return = true;
-        }
-        AST::Break => {
-            
-        }
-        AST::Continue => {
-            
-        }
-        AST::Unreachable => {
-            let mut has_return = scope.has_return.write().unwrap();
-            *has_return = true;
-        }
-        AST::Function { name, args, returns, actions } => {
-            //let mut vars = scope.vars.write().unwrap();
-            //vars.push(Arc::new(Variable{ast: step.clone()}));//Should functions be in the vars list? they basically are
-            //drop(vars);
-            let scope = Scope::add_child(scope.clone(), step.range);
-            for arg in args{
-                analyse_step(scope.clone(), &arg, untyped);
-            }
-            analyse_scope(scope.clone(), actions, untyped);
-
-            if let Some(returns) = returns{
-                //analyse_step(scope.clone(), step, untyped);//TODO: type checking
-                if returns.value.as_ref() != &Type::Void &&  returns.value.as_ref() != &Type::Var{
-                    let has_return = scope.has_return.read().unwrap();
-                    if !*has_return{
-                        let mut errors = scope.errors.write().unwrap();
-                        errors.push(Element::new(LogicError::DoesNotReturnError, returns.range));
-                    }
-                }
-            }
-
-
-        }
-        AST::AnonymousFunction(args, included_vars , actions) => {
-            let scope = Scope::add_child(scope, step.range);
-            analyse_scope(scope.clone(), actions, untyped);
-            for arg in args{
-                analyse_step(scope.clone(), &arg, untyped);
-            }
-            for var in included_vars{
-                let name = *var.value.clone();
-                let variable = get_variable(scope.clone(), &name);
-                if variable.is_none(){
-                    let mut errors = scope.errors.write().unwrap();
-                    errors.push(Element::new(LogicError::UndefinedVariableError(name), var.range));
-                }
-            }
-        }
-        AST::AnonymousScope(actions) => {
-            let scope = Scope::add_child(scope, step.range);
-            analyse_scope(scope.clone(), actions, untyped);
-        }
-        AST::Thread(action) => {
-            analyse_step(scope, action, untyped);
-        }
-        AST::Wait(_) => {
-            //Todo, either shout if this is not a thread, or mark this as needing to be threaded
-            //And complain when the function is called
-        }
-        AST::Member(left, right ) => {
-            analyse_step(scope.clone(), &left, untyped);
-            //Todo: Actually test if this is even a struct
-        }
-        AST::Clone(value) | AST::Neg(value) | AST::Increment(value) | AST::Decrement(value) | AST::Not(value) => {
-            analyse_step(scope.clone(), &value, untyped);
-        }
-        AST::Expect(_, _) | AST::Cast(_, _) => {
-            //We dont care about types yet
-        }
-        AST::Add(left, right) | AST::Sub(left, right) | AST::Mul(left, right) | AST::Div(left, right) | AST::Mod(left, right) | AST::Pow(left, right) |
-        AST::Gt(left, right) | AST::Gte(left, right) | AST::Eq(left, right) | AST::Neq(left, right) | AST::Gt(left, right) | AST::Lt(left, right) | AST::Lte(left, right) |
-        AST::And(left, right) | AST::Or(left, right) | AST::Xor(left, right)=> {
-            analyse_step(scope.clone(), &left, untyped);
-            analyse_step(scope.clone(), &right, untyped);
-            //Todo: this doesnt test if these operations are valid
-        }
-        AST::Index(left, right) => {
-            analyse_step(scope.clone(), &left, untyped);
-            analyse_step(scope.clone(), &right, untyped);
-            //todo: this doesnt test if these operations are valid
-        }
-        AST::FunctionCall { function, args } => {
-            analyse_step(scope.clone(), &function, untyped);
-            for arg in args{
-                analyse_step(scope.clone(), &arg, untyped);
-            }
-            //Todo: test for thread stuff
-        }
-        AST::Variable(name) => {
-            let var = get_variable(scope.clone(), name.value.as_ref());
-            if var.is_none(){
-                let mut errors = scope.errors.write().unwrap();
-                errors.push(Element::new(LogicError::UndefinedVariableError(*name.value.clone()), name.range));
-            }
-        }
-        AST::Error(err) => {
-            let mut errors = scope.errors.write().unwrap();
-            errors.push(Element::new(LogicError::SyntaxError(err.clone()), step.range));
-        }
-        AST::Comment(_) => {
-            
-        }
-        AST::Literal(sqtype) => {
-            
-        }
-        AST::Array(values) => {
-            for value in values{
-                analyse_step(scope.clone(), &value, untyped);
-            }
-        }
-        AST::Table(keyvalues) => {
-            for (key, value) in keyvalues{
-                analyse_step(scope.clone(), &key, untyped);
-                analyse_step(scope.clone(), &value, untyped);
-                //TODO: This doesnt check types and such
-            }
-        }
-        AST::KeyValues(keyvalues) => {
-            for (key, value) in keyvalues{
-                analyse_step(scope.clone(), &value, untyped);
-            
-            }
-        }
-        AST::In(a, b) => {
-            analyse_step(scope.clone(), a, untyped);
-            analyse_step(scope, b, untyped);
-        }
-        AST::Ternary(a, b, c) => {
-            analyse_step(scope.clone(), a, untyped);
-            analyse_step(scope.clone(), b, untyped);
-            analyse_step(scope.clone(), c, untyped);
-        }
-    }
-}
-
-pub fn is_expression_mutable(scope: Arc<Scope>, expression: &AST) -> bool{
-    todo!()
-    //Pain
-}
-
-pub fn parse_file(text: &String, run_on: &String, filename: &String, untyped: bool){
-    let asts = generate_asts(text, run_on, filename);
-    for (state, steps) in asts{
-        println!("\n\n\n{:?}\n\n\n\n", state);
-        let scope = Scope::new((0, text.len()));
-        find_funcs(scope.clone(), &steps);
-        analyse_scope(scope.clone(), &steps, untyped);
-        for err in collect_errs(scope.clone()){
-            if let LogicError::UndefinedVariableError(_) = err.value.as_ref(){
-                continue
-            }
-            println!("{:?} at \n {} \n", err, text[err.range.0 .. err.range.1].to_string());
-        }
-    }
-}
-
-pub fn collect_errs(scope: Arc<Scope>) -> Vec<Element<LogicError>>{
-    let mut errors = scope.errors.read().unwrap().clone();
-    for child in scope.children.read().unwrap().iter(){
-        errors.append(&mut collect_errs(child.clone()));
-    }
-    return errors;
-}
 
 #[cfg(test)]
 #[test]
 fn run_testfile(){
-    use std::fs::read_to_string;
-    let text = read_to_string("squirrelFile.nut").unwrap();
-    parse_file(&text, &"MP || UI".to_string(), &"name".to_string(), false);
+    use std::{fs::read_to_string, path::PathBuf};
+
+    use single_file::parse_file;
+    //let text = read_to_string("squirrelFile.nut").unwrap();
+    let file = FileInfo::new("squirrelFile.nut".to_string(), PathBuf::from("squirrelFile.nut"), "MP || UI".to_string(), common::FileType::RSquirrel);
+    println!("File: {:?}", file);
+    
 
 }
+

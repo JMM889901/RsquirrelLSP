@@ -1,0 +1,46 @@
+{
+	"Name" : "1:8 Global",
+	"Version": "0.1.0",
+	"LoadPriority": 5,
+	"Scripts": [
+		{
+			"Path": "Defines1.gnut",
+			"RunOn": "SERVER && MP && DEV && TEST"
+		},
+		{
+			"Path": "Defines2.gnut",
+			"RunOn": "SERVER && MP && DEV && !TEST"
+		},
+		{
+			"Path": "Defines3.gnut",
+			"RunOn": "SERVER && MP && !DEV && TEST"
+		},
+		{
+			"Path": "Defines4.gnut",
+			"RunOn": "SERVER && MP && !DEV && !TEST"
+		},
+		{
+			"Path": "Defines5.gnut",
+			"RunOn": "SERVER && !MP && DEV && TEST"
+		},
+		{
+			"Path": "Defines6.gnut",
+			"RunOn": "SERVER && !MP && DEV && !TEST"
+		},
+		{
+			"Path": "Defines7.gnut",
+			"RunOn": "SERVER && !MP && !DEV && TEST"
+		},
+		{
+			"Path": "Defines8.gnut",
+			"RunOn": "SERVER && !MP && !DEV && !TEST"
+		},
+		{
+			"Path": "Calls.gnut",
+			"RunOn": "SERVER"
+		}
+    ],
+		"Localisation": [
+		"resource/Flipside_localisation_%language%.txt"
+	]
+}

@@ -1,0 +1,123 @@
+{
+	"Name" : "Mutator Pack",
+	"Description" : "Adds new mutators for private matches",
+	"Version": "0.5.3",
+	"LoadPriority": 1,
+
+	"Scripts": [
+		{
+			"Path": "TwinTacticals.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "TwinTacticals_Init"
+			},
+
+			"ServerCallback": {
+				"After": "TwinTacticals_Init"
+			}
+		},
+		{
+			"Path": "TwinGrenades.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "TwinGrenades_Init"
+			},
+
+			"ServerCallback": {
+				"After": "TwinGrenades_Init"
+			}
+		},
+		{
+			"Path": "Chaos.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "Chaos_Init"
+			},
+
+			"ServerCallback": {
+				"After": "Chaos_Init"
+			}
+		},
+		{
+			"Path": "Switcharoo.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "Switcharoo_Init"
+			},
+
+			"ServerCallback": {
+				"After": "Switcharoo_Init"
+			}
+		},
+		{
+			"Path": "Promotion.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "Promotion_Init"
+			},
+
+			"ServerCallback": {
+				"After": "Promotion_Init"
+			}
+		},
+		{
+			"Path": "stealing.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "WeaponStealing_Init"
+			},
+
+			"ServerCallback": {
+				"After": "WeaponStealing_Init"
+			}
+		},
+		{
+			"Path": "acceleration.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "Acceleration_Init"
+			},
+
+			"ServerCallback": {
+				"After": "Acceleration_Init"
+			}
+		},
+		{
+			"Path": "Explosive.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "Explosive_init"
+			},
+
+			"ServerCallback": {
+				"After": "Explosive_init"
+			}
+		},
+		{
+			"Path": "ClassWar.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "ClassWar_init"
+			},
+
+			"ServerCallback": {
+				"After": "ClassWar_init"
+			}
+		},
+		{
+			"Path": "debugstuff.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "Debug_Init"
+			},
+
+			"ServerCallback": {
+				"After": "Debug_Init"
+			}
+		}
+	],
+
+	"Localisation": [
+		"resource/MutatorPack_localisation_%language%.txt"
+	]
+}

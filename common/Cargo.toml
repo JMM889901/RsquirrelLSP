@@ -1,0 +1,14 @@
+[package]
+name = "common"
+description = "the absolute bare minimum should be here, only things that truly are used in both RSquirrel AND preprocessor"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "common"
+path = "src/lib.rs" 
+
+[features]
+timed = []
+
+[dependencies]

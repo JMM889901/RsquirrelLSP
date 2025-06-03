@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+"common",
+"Preprocessor/Parser",
+"Preprocessor/ConfigPredictor",
+"Preprocessor/ConfigAnalyser",
+"AST Generator/parser",
+"AST Generator/analysis_common",
+"AST Generator/TokenIdentifier",
+"AST Generator/analyser",
+"E2E",
+"LSP",
+
+]

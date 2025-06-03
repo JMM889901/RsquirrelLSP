@@ -1,0 +1,6 @@
+global function b
+void function b(){
+    globalfunc()
+    int x = 1
+    array<entity> players = GetPlayerArray()
+}

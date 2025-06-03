@@ -1,0 +1,21 @@
+{
+    "UI":[
+        {
+            "origin": {
+                "path": "https://github.com/R2Northstar/NorthstarMods/blob/main/Northstar.Client/mod/scripts/vscripts/ui/menu_ns_setversionlabel.nut",
+                "pos": [15, 33]
+            },
+            "type": "Var",
+            "name": "SetVersionLabel",
+            "description": "Some northstar exclusive function that is not native"
+        }
+    ],
+    "SERVER && MP":[
+        {
+            "type": "Func",
+            "name": "GetPlayerArray",
+            "description": "Magic DLL function defined in native",
+            "returnTypeString": "array<Entity>"
+        }
+    ]
+}

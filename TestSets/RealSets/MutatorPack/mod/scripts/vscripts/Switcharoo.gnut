@@ -1,0 +1,19 @@
+global function Switcharoo_Init
+void function Switcharoo_Init(){
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "Switcharoo", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+    #if SERVER
+    AddCallback_OnPlayerKilled(Swap)
+    #endif
+}
+bool function SwitcharooEnabled(){
+    return GetCurrentPlaylistVarInt("Switcharoo", 0) == 1
+}
+#if SERVER
+void function Swap(entity victim, entity attacker, var damageInfo){
+    if(SwitcharooEnabled() && attacker.IsPlayer() && victim.IsPlayer()){
+    attacker.SetOrigin(victim.GetOrigin())
+    attacker.SetAngles(victim.GetAngles())
+    attacker.SetVelocity(victim.GetVelocity())
+    }
+}
+#endif

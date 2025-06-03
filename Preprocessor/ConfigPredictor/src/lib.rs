@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::result;
+
 use state::{Evaluation, SqCompilerState};
 use PreprocessorParser::ast::{AST};
 use PreprocessorParser::condition::Condition;
@@ -27,16 +31,25 @@ fn get_states_dirty(ast: &AST) -> Vec<SqCompilerState>{
     };
     let mut permutations = Vec::new();
     //exactly 1 vm will be active at a time
+    //Caution: Super duper hacky and slow, but this is a fraction of the speed anyways
+    if vms.len() > 0{
+        vms.clear();
+        vms.push("SERVER".to_string());
+        vms.push("CLIENT".to_string());
+        vms.push("UI".to_string());
+    }//This forces it to handle all 3 vms
+    //*VERY BAD*/
     for vm in vms{
         let mut permutation = SqCompilerState::one(vm.clone(), true);
         permutation.insert_terms(Condition::get_impossible_conditions(&vm), false);
         permutations.push(permutation);
     };
+    //println!("Permutations: {:?}", permutations);
     
 
     let condition_permutations = get_condition_permutations(conditions_dedup);
     if permutations.len() == 0{
-        return condition_permutations
+        return filter_acceptable_states(ast.get_run_on().unwrap(), condition_permutations)
     }
     let mut result: Vec<SqCompilerState> = permutations.iter().flat_map(|permutation| {
         condition_permutations.iter().map(|condition_permutation| {
@@ -52,7 +65,7 @@ fn get_states_dirty(ast: &AST) -> Vec<SqCompilerState>{
 
 pub fn get_condition_permutations(conditions: Vec<String>) -> Vec<SqCompilerState> {//Handle runOn conditions, probably just filter conditions that conflict idk
     if let Some((head, tail)) = conditions.split_first(){
-        println!("head{:?}", head);
+        //println!("head{:?}", head);
         let tail_permutations = get_condition_permutations(tail.to_vec());
         let and_permutation = SqCompilerState::one(head.to_string(), true);
         let not_permutation = SqCompilerState::one(head.to_string(), false);
@@ -74,4 +87,47 @@ pub fn filter_acceptable_states(run_on: Condition, states: Vec<SqCompilerState>)
         }
     }
     return filtered_conditions
+}
+
+#[cfg(test)]
+#[test]
+fn one_non_vm(){
+    let runon = Condition::Term("MP".to_string());
+    let mut state = SqCompilerState::one("MP".to_string(), true);
+    let mut badstate = SqCompilerState::one("MP".to_string(), false);
+    //Test that run_on MP will NOT result in MP and !MP as runon is mandatory
+    let result = filter_acceptable_states(runon, vec![state.clone(), badstate.clone()]);
+    assert_eq!(result.len(), 1);
+    println!("Result: {:?}", result);
+}
+
+#[test]
+fn filter_or(){
+    let mp_or_ui = Condition::Or(Box::new(Condition::Term("MP".to_string())), Box::new(Condition::Term("UI".to_string())));
+    let mut not_ui_but_mp = HashMap::new();
+    not_ui_but_mp.insert("MP".to_string(), true);
+    not_ui_but_mp.insert("UI".to_string(), false);
+    
+    let mut not_ui_but_mp = SqCompilerState(not_ui_but_mp);
+
+    let result = filter_acceptable_states(mp_or_ui, vec![not_ui_but_mp]);
+    assert_eq!(result.len(), 1);
+    println!("Result: {:?}", result);
+}
+
+#[cfg(test)]
+#[test]
+fn or(){
+    let server_or_client = Condition::Or(Box::new(Condition::Term("SERVER".to_string())), Box::new(Condition::Term("CLIENT".to_string())));
+    let ast = AST::RunOn(vec![], server_or_client);
+    let states = get_states(&ast);
+    println!("States: {:?}", states);
+    //These states contradict so 10, 01
+    assert_eq!(states.len(), 2);
+    let mp_or_ui = Condition::Or(Box::new(Condition::Term("MP".to_string())), Box::new(Condition::Term("UI".to_string())));
+    let ast = AST::RunOn(vec![], mp_or_ui);
+    let states = get_states(&ast);
+    println!("States: {:?}", states);
+    //These states dont contradict so 11, 10, 01, 00
+    assert_eq!(states.len(), 4);
 }

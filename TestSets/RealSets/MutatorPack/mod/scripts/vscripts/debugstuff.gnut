@@ -1,0 +1,9 @@
+global function Debug_Init
+global function PeePeeDebugEnabled
+void function Debug_Init(){
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "debug", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+}
+
+bool function PeePeeDebugEnabled(){
+    return GetCurrentPlaylistVarInt("debug", 0) == 1
+}

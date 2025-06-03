@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Condition{
-    And(Box<Condition>, Box<Condition>), //See below
-    Or(Box<Condition>, Box<Condition>), //Unused atm, might do this for result converage
+    And(Box<Condition>, Box<Condition>),
+    Or(Box<Condition>, Box<Condition>),
     Not(Box<Condition>),
     Term(String),
 }

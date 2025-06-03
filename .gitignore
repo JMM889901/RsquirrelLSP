@@ -1,3 +1,5 @@
 **/preprocessed/**
 **/target
 **/.vscode/
+**/node_modules/
+E2E/dhat-heap.json

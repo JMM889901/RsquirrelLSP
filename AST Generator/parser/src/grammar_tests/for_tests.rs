@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use ConfigAnalyser::sq_file_variant::SqFileVariant;
+use ConfigAnalyser::SqFileVariant;
 use crate::{grammar::squirrel_ast, SquirrelParse};
 use super::generate_data_structure;
 use crate::ast::*;

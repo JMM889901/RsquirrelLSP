@@ -1,0 +1,47 @@
+global function Explosive_init
+void function Explosive_init()
+{
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "Grenades_only", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+    #if SERVER
+    AddCallback_OnPlayerRespawned( OnPlayerRespawn )
+    AddCallback_OnPlayerKilled( OnPlayerKilled )
+    AddCallback_OnPlayerGetsNewPilotLoadout( OnPlayerChangeLoadout)
+    #endif
+}
+bool function ExplosiveEnabled()
+{
+    return GetCurrentPlaylistVarInt("Grenades_only", 0) == 1
+}
+#if SERVER
+void function OnPlayerRespawn(entity player)
+{
+    if(ExplosiveEnabled() && player.GetOffhandWeapons().len() != 0 && player.GetMainWeapons().len() !=0){
+    foreach(entity weapon in player.GetMainWeapons())
+        player.TakeWeaponNow(weapon.GetWeaponClassName())
+    player.GiveWeapon("mp_weapon_softball")
+    foreach(entity weapon in player.GetMainWeapons()){
+        weapon.SetWeaponPrimaryAmmoCount(0)
+        weapon.SetWeaponPrimaryClipCount(0)}
+    }
+}
+void function OnPlayerChangeLoadout(entity player, PilotLoadoutDef loadout)
+{
+    OnPlayerRespawn(player)
+}
+void function OnPlayerKilled(entity victim, entity attacker, var damageinfo)
+{
+    if(ExplosiveEnabled()){
+        if ( !victim.IsPlayer() || !attacker.IsPlayer() || GetGameState() != eGameState.Playing )
+            return
+        else{
+    foreach(entity weapon in attacker.GetMainWeapons()){
+        weapon.SetWeaponPrimaryAmmoCount(0)
+        int clip = weapon.GetWeaponPrimaryClipCount() + 2
+        if (weapon.GetWeaponPrimaryClipCountMax() < clip)
+            weapon.SetWeaponPrimaryClipCount(weapon.GetWeaponPrimaryClipCountMax())
+        else
+            weapon.SetWeaponPrimaryClipCount(weapon.GetWeaponPrimaryClipCount() + 2)}
+    }
+}
+}
+#endif

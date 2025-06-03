@@ -3,3 +3,4 @@
 /old/*
 ConfigAnalyser/preprocessed_alt/*
 ConfigAnalyser/preprocessed/*
+**/node_modules/*

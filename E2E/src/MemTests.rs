@@ -1,0 +1,1 @@
+//Test memory allocation when storing/dropping scopes, files and references.

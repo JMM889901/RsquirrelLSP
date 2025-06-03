@@ -1,0 +1,36 @@
+{
+	"Name" : "Flipside",
+	"Description" : "Flipside Gamemode",
+	"Version": "0.1.0",
+	"LoadPriority": 5,
+	"ConVars": [
+		{
+			"Name": "Flipside",
+			"DefaultValue": "0"
+		}
+	],
+	"Scripts": [
+		{
+			"Path": "flipside.gnut",
+			"RunOn": "MP",
+			"ClientCallback": {
+				"After": "flipside_init"
+			},
+
+			"ServerCallback": {
+				"After": "flipside_init"
+			}
+		},
+		{
+			"Path": "weapons/mp_ability_shifter_super.gnut",
+			"RunOn": "MP"
+		},
+		{
+			"Path": "weapons/mp_titanability_phase_dash.gnut",
+			"RunOn": "MP"
+		}
+    ],
+		"Localisation": [
+		"resource/Flipside_localisation_%language%.txt"
+	]
+}

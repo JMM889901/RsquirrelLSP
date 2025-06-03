@@ -1,0 +1,13 @@
+[package]
+name = "TokenIdentifier"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "TokenIdentifier"
+path = "src/lib.rs" 
+
+[dependencies]
+analysis_common = { path = "../analysis_common" }
+ConfigAnalyser = {path = "../../Preprocessor/ConfigAnalyser"}
+ASTParser = {path = "../parser"}

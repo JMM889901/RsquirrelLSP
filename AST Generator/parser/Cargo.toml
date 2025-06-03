@@ -10,3 +10,8 @@ path = "src/lib.rs"
 [dependencies]
 peg = "0.8.4"
 ConfigAnalyser = {path = "../../Preprocessor/ConfigAnalyser"}
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+json-spanned-value = "0.2.2"
+common = { path = "../../common" }
+rand = "0.9.0"

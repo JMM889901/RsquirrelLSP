@@ -1,0 +1,74 @@
+global function Acceleration_Init
+void function Acceleration_Init() 
+{
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "--------Acceleration-------", ["#SETTING_DISABLED"], "0")
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "steal_speed", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "gain_speed", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+	AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "titans_gain_speed", ["#SETTING_DISABLED", "#SETTING_ENABLED"], "0")
+    AddPrivateMatchModeSettingEnum("#MODE_SETTING_CATEGORY_RIFFPACK", "---------------------------", ["#SETTING_DISABLED"], "0")
+	#if SERVER
+		AddCallback_OnPlayerKilled(Accelerate);
+        AddCallback_PlayerClassChanged(SetSpeed)
+	#endif
+}
+//table
+struct{
+    table<entity, int> boosts = {}
+} file
+//bools
+	bool function StealSpeedEnabled() 
+    {
+		return GetCurrentPlaylistVarInt("steal_speed", 0) == 1
+	}
+
+	bool function GainSpeedEnabled() 
+    {
+		return GetCurrentPlaylistVarInt("gain_speed", 0) == 1
+	}
+	bool function TitanSpeedEnabled() 
+    {
+		return GetCurrentPlaylistVarInt("titans_gain_speed", 0) == 1
+	}
+#if SERVER
+//functions
+void function increasespeed(entity player, int step)
+{
+    if(player in file.boosts)
+        file.boosts[player] = file.boosts[player] + step
+    else
+        file.boosts[player] <- step
+}
+void function resetspeed(entity player)
+{
+    if(player in file.boosts)
+        file.boosts[player] = 0
+    else
+        file.boosts[player] <- 0
+}
+void function SetSpeed(entity player)
+{
+    if(GainSpeedEnabled())
+    {
+    if(player.IsTitan() && !(TitanSpeedEnabled()))
+         StatusEffect_StopAll( player, eStatusEffect.speed_boost )
+    else{
+        increasespeed(player, 0) //stops crashes on startup and im too lazy to make a better solution
+        StatusEffect_AddTimed( player, eStatusEffect.speed_boost, 0.2*file.boosts[player], 9999, 0.1 )
+        }
+    }
+}
+//core
+void function Accelerate(entity victim, entity attacker, var damageinfo)
+{
+    if(GainSpeedEnabled()){
+    if ( !victim.IsPlayer() || !attacker.IsPlayer() || GetGameState() != eGameState.Playing )
+		return 
+    if(StealSpeedEnabled() && victim in file.boosts)
+        increasespeed(attacker, file.boosts[victim])
+    if(GainSpeedEnabled())
+        increasespeed(attacker, 1)
+    resetspeed(victim)
+    SetSpeed(attacker)
+    }
+}
+#endif

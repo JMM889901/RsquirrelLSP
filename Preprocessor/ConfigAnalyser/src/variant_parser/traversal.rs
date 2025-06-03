@@ -5,13 +5,13 @@ use ConfigPredictor::state::{Evaluation, SqCompilerState};
 use PreprocessorParser::ast::{If, Node, AST};
 
 
-use super::variant::SqVariant;
+use super::variant::SqFileVariant;
 //The basic premise here is that all parsing is done using global positions, thanks to beg being surprisingly good with custom parsers, we can freely set the next position
 //each time one is checked, so instead of just going 1,2,3 etc. we check to see if we have reached the end of the current text block, and if so find the next "valid" one 
 //for this config, and skip to it, IE 1,2,3,6,7,8
 //This means that positions returned by calculate_next_position, and as such any AST constructed using the position!() macro (which is all of them) will use the "global" position of that element
 //essentially making conversion between relative locations and global locations not actually be a conversion at all
-impl SqVariant{
+impl SqFileVariant{
     pub fn to_linecol_stateless(node: &Node, state: &SqCompilerState, target_pos: usize, current_pos: LineCol) -> Result<LineCol, LineCol>{
         //>stateless
         //>look inside function definition
@@ -50,7 +50,7 @@ impl SqVariant{
         }
         let mut pos = current_pos;
         for node in nodes{
-            let result = SqVariant::to_linecol_stateless(node, state, target_pos, pos);
+            let result = SqFileVariant::to_linecol_stateless(node, state, target_pos, pos);
             match result{
                 Ok(_) => return result,
                 Err(a) => {

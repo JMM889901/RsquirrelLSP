@@ -3,8 +3,10 @@ use std::{fmt::Error, str, sync::RwLock};
 use ast::{Element, AST};
 use ConfigAnalyser::get_file_varaints;
 pub mod ast;
+pub mod visitor;
 pub mod error;
 pub mod grammar;
+pub mod external_resources;
 
 //Load tests
 #[cfg(test)]
@@ -12,7 +14,7 @@ mod grammar_tests;
 
 #[derive(Debug)]
 pub struct SquirrelParse {
-    errs: RwLock<Vec<Element<crate::error::Error>>>,
+    pub errs: RwLock<Vec<Element<crate::error::Error>>>,
     globals: RwLock<Vec<Global>>,
     untyped: RwLock<bool>,
 }

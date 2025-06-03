@@ -1,0 +1,30 @@
+{
+	"Name" : "LSPTest",
+	"Version": "0.1.0",
+	"LoadPriority": 5,
+	"Scripts": [
+		{
+			"Path": "DefinesGlobal.gnut",
+			"RunOn": "(SERVER && MP) || (SERVER && !MP)"
+		},
+		{
+			"Path": "DefinesGlobalMP.gnut",
+			"RunOn": "SERVER && MP"
+		},
+		{
+			"Path": "DefinesGlobalNotMP.gnut",
+			"RunOn": "SERVER && !MP"
+		},
+		{
+			"Path": "SecondFile.gnut",
+			"RunOn": "MP && CLIENT"
+		},
+		{
+			"Path": "LastFile.gnut",
+			"RunOn": "SERVER"
+		}
+    ],
+		"Localisation": [
+		"resource/Flipside_localisation_%language%.txt"
+	]
+}
