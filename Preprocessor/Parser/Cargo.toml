@@ -1,0 +1,11 @@
+[package]
+name = "PreprocessorParser"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "PreprocessorParser"
+path = "src/lib.rs" 
+
+[dependencies]
+peg = "0.8.4"

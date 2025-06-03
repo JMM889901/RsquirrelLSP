@@ -1,0 +1,12 @@
+[package]
+name = "ASTAnalyser"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ASTAnalyser"
+path = "src/lib.rs" 
+
+[dependencies]
+ConfigAnalyser = {path = "../../Preprocessor/ConfigAnalyser"}
+ASTParser = {path = "../parser"}

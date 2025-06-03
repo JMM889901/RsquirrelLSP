@@ -1,0 +1,13 @@
+[package]
+name = "ConfigPredictor"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ConfigPredictor"
+path = "src/lib.rs" 
+
+[dependencies]
+PreprocessorParser = {path = "../Parser"}
+peg = "0.8.4"
+ropey = "1.6.1"
