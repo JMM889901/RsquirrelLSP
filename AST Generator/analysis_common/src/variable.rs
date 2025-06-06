@@ -1,9 +1,10 @@
 use std::{fmt::Debug, path::PathBuf, sync::{Arc, Weak, RwLock}};
 
+use analysis_runner::state_resolver::CompiledState;
 use common::FileInfo;
-use ASTParser::ast::{Element, AST};
+use ASTParser::{ast::{Element, AST}, RunPrimitiveInfo};
 
-use crate::{spanning_search::{SpanningSearch, Traversable}, CompiledState, RunPrimitiveInfo};
+use crate::{spanning_search::{SpanningSearch, Traversable}};
 
 
 

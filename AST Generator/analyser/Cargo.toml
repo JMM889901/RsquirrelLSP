@@ -21,3 +21,4 @@ serde_json = "1.0.140"
 json-spanned-value = "0.2.2"
 common = { path = "../../common" }
 rayon = "1.10.0"
+analysis_runner = {path = "../../Analyser"}

@@ -10,4 +10,5 @@ path = "src/lib.rs"
 [dependencies]
 analysis_common = { path = "../analysis_common" }
 ConfigAnalyser = {path = "../../Preprocessor/ConfigAnalyser"}
+analysis_runner = {path = "../../Analyser"}
 ASTParser = {path = "../parser"}

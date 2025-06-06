@@ -1,12 +1,78 @@
-use std::{fmt::Error, str, sync::RwLock};
+use std::{cell::RefCell, fmt::Error, str, sync::{Arc, RwLock}};
 
+use analysis_runner::{state_resolver::{CompiledState, HasState}, Analyser, AnalysisResult, AnalysisReturnType, AnalysisStep, HasVariantID, SQDistinctVariant};
 use ast::{Element, AST};
-use ConfigAnalyser::get_file_varaints;
+use common::FileInfo;
+use ConfigAnalyser::{get_file_varaints, SqFileVariant};
+
+use crate::grammar::squirrel_ast;
 pub mod ast;
 pub mod visitor;
 pub mod error;
 pub mod grammar;
 pub mod external_resources;
+
+pub struct ASTParseStep{}
+impl AnalysisStep for ASTParseStep{
+    fn analyse(&self, variant: &SQDistinctVariant, analyser: &Analyser) -> AnalysisReturnType {
+        let parse_data = SquirrelParse::empty();
+        let offset = RefCell::new(0);
+        let var = SqFileVariant::from_text(variant.text().clone(), variant.get_state().clone().into());//TODO: Expensive string clone
+        let parse = squirrel_ast::file_scope_dbg(&var, &offset, &parse_data);
+        //At this point this is a redundant type, but i dont feel like pulling all that out right now
+        let run = RunPrimitiveInfo::new(
+            variant.get_file().clone(),
+            variant.get_state().clone().into(),
+            parse.clone().unwrap()//TODO: Scary unwrap
+        );//Really i shouldnt need to unwrap almost anywhere, error recovery should be possible (and is probably needed)
+        Ok(Arc::new(
+            ASTParseResult {
+                parse_data,
+                run: Arc::new(run)
+            }
+        ))
+        
+    }
+}
+pub struct ASTParseResult{
+    pub parse_data: SquirrelParse,
+    pub run: Arc<RunPrimitiveInfo>,//Again, this does not really need to be like this but i dont feel like yanking out all that code
+}
+impl AnalysisResult for ASTParseResult {}
+
+
+#[derive(Debug, Clone)]
+pub struct RunPrimitiveInfo{
+    //Essentially the run after parsing, before any further steps
+    //Should effectively be able to be used anywhere to say where, what and in what context
+    pub file: FileInfo,
+    pub context: CompiledState,
+    pub ast: Vec<Element<AST>>,//TODO: See about removing this
+    //It feels wrong to have it here
+}
+impl RunPrimitiveInfo{
+    pub fn new(file: FileInfo, context: CompiledState, ast: Vec<Element<AST>>) -> Self{
+        RunPrimitiveInfo{
+            file,
+            context,
+            ast
+        }
+    }
+}
+impl HasState for RunPrimitiveInfo{
+    fn get_state(&self) -> CompiledState {
+        return self.context.clone();
+    }
+}
+impl HasVariantID for RunPrimitiveInfo {
+    fn get_state(&self) -> &CompiledState {
+        &self.context
+    }
+
+    fn get_file(&self) -> &FileInfo {
+        &self.file
+    }
+}
 
 //Load tests
 #[cfg(test)]

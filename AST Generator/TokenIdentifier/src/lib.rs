@@ -1,8 +1,18 @@
 use std::sync::{Arc, RwLock};
 
-use analysis_common::{spanning_search::{Traversable, TraversableMap}, variable::Variable, RunPrimitiveInfo};
-use ASTParser::ast::{Element, AST};
+use analysis_common::{spanning_search::{Traversable, TraversableMap}, variable::Variable};
+use analysis_runner::{Analyser, AnalysisError, AnalysisResult, AnalysisReturnType, AnalysisStep, SQDistinctVariant};
+use ASTParser::{ast::{Element, AST}, ASTParseResult, ASTParseStep, RunPrimitiveInfo};
 mod external;
+
+pub struct GlobalSearchStep{}
+impl AnalysisStep for GlobalSearchStep {
+    fn analyse(&self, run: &SQDistinctVariant, analyser: &Analyser) -> AnalysisReturnType {
+        let ast: Arc<ASTParseResult> = analyser.get_prior_result(run).unwrap();
+        let globals = get_globals(ast.run.clone());
+        Ok(Arc::new(globals))
+    }
+}
 
 
 
@@ -11,6 +21,7 @@ pub struct Globals {//TOOD: Should this type even exist? theres unlikely to be a
     pub globals: TraversableMap<String, Variable>,
     //This causes something of an abstraction, a variable will "exist" twice, once locally and once globally
 }
+impl AnalysisResult for Globals{}
 //#[derive(Debug)]
 //pub struct Token {//Token is a primitive form of Variable, so lets just use variable instead duh
 //    pub name: String,
@@ -100,3 +111,56 @@ pub fn analyse_step(ctx: &(Arc<RunPrimitiveInfo>, &RwLock<Option<Element<AST>>>)
     }
 }
     
+
+pub fn analyse_step_new(ctx: &(Arc<RunPrimitiveInfo>, &RwLock<Option<Element<AST>>>), tokens: &Vec<(String, Arc<Variable>)>, step: &Element<AST>) -> Vec<(String, Arc<Variable>)>{
+    let run = ctx.0.clone();
+    let mut all_global = &ctx.1;
+    let mut tokens = tokens.clone(); 
+    match step.value.as_ref() {
+        AST::GlobalizeAllFunctions => {
+            all_global.write().unwrap().clone_from(&Some(step.clone()));
+            return tokens
+        }
+        AST::ConstDeclaration { global, name, vartype, value } => {
+            if *global {
+                let var = Variable::external(step.clone(), run.clone());
+                let token_name = name.value.clone();
+                tokens.push((token_name.to_string(), Arc::new(var)));
+            }
+            return tokens
+        }
+        AST::EnumDeclaration { global, name } => {
+            if *global {
+                if *global {
+                    let var = Variable::external(step.clone(), run.clone());
+                    let token_name = name.value.clone();
+                    tokens.push((token_name.to_string(), Arc::new(var)));
+                }
+            }
+            return tokens
+        }
+        AST::StructDeclaration { global, name, attributes } => {
+            if *global {
+                let var = Variable::external(step.clone(), run.clone());
+                let token_name = name.value.clone();
+                tokens.push((token_name.to_string(), Arc::new(var)));
+            }
+
+            return tokens
+        }
+        AST::Global(name) => {
+            let var = Variable::external(step.clone(), run.clone());
+            tokens.push((name.clone(), Arc::new(var)));
+            return tokens
+        }
+        AST::Function { name, args, returns, actions } => {
+            if let Some(all_global) = all_global.read().unwrap().clone() {
+                let var = Variable::external(all_global.clone(), run.clone());
+                let token_name = name.value.clone();
+                tokens.push((token_name.to_string(), Arc::new(var)));
+            }
+            return tokens
+        }
+        _ => (vec![]),
+    }
+}

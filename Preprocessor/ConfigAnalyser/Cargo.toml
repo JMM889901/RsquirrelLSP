@@ -13,3 +13,4 @@ ConfigPredictor = {path = "../ConfigPredictor"}
 ropey = "1.6.1"
 peg = "0.8.4"
 common = { path = "../../common" }
+analysis_runner = {path = "../../Analyser"}

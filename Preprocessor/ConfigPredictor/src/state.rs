@@ -1,4 +1,4 @@
-use std::{clone, collections::{HashMap, HashSet}, fmt};
+use std::{clone, collections::{HashMap, HashSet}, fmt, hash::Hash};
 
 use PreprocessorParser::condition::Condition;
 
@@ -9,8 +9,8 @@ pub enum Evaluation{
     Fail
 }
 
-#[derive(Clone, Debug)]//This probably shouldnt be clonable, not that it *hugely* matters
-pub struct SqCompilerState(pub HashMap<String, bool>);
+#[derive(Clone, Debug, PartialEq, Eq)]//This probably shouldnt be clonable, not that it *hugely* matters
+pub struct SqCompilerState(pub HashMap<String, bool>);//TODO: I should really just build an object for each condition, string comparison is expensive (but like, not THAT expensive)
 
 impl SqCompilerState{
     pub fn has_multiple_states(&self) -> bool{
@@ -113,6 +113,16 @@ impl SqCompilerState{
                     None => Evaluation::Neutral
                 }
             },
+        }
+    }
+}
+impl Hash for SqCompilerState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),y.clone())).collect();
+        vec.sort();
+        for (key, value) in vec{
+            key.hash(state);
+            value.hash(state);
         }
     }
 }

@@ -7,7 +7,10 @@ edition = "2021"
 tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread", "io-std"] }
 tower-lsp = "0.20.0"
 ConfigAnalyser = { path = "../Preprocessor/ConfigAnalyser" }
+ASTParser = {path = "../AST Generator/parser"}
+TokenIdentifier = {path = "../AST Generator/TokenIdentifier"}
 ASTAnalyser = { path = "../AST Generator/analyser" }
 common = { path = "../common" }
 analysis_common = { path = "../AST Generator/analysis_common" }
 rayon = "1.10.0"
+analysis_runner = {path = "../Analyser"}

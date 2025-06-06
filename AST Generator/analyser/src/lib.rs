@@ -7,7 +7,9 @@ use std::hash::Hash;
 use std::io::Write;
 use std::sync::{Arc, RwLock, Weak};
 
-use analysis_common::{CompiledState, RunPrimitiveInfo};
+use analysis_runner::comp_tree::{VariantData};
+use analysis_runner::state_resolver::CompiledState;
+use analysis_runner::{Analyser, AnalysisResult, FileFilter, HasVariantID, SQDistinctVariant};
 use common::FileInfo;
 use load_order::{FilePreAnalysis};
 use single_file::{analyse, AnalysisState};
@@ -17,20 +19,51 @@ use analysis_common::variable::{Variable, VariableReference, VariableSearch};
 use ConfigAnalyser::get_file_varaints;
 use ASTParser::ast::{Element, Type, AST};
 use ASTParser::grammar::squirrel_ast;
-use ASTParser::SquirrelParse;
+use ASTParser::{ASTParseResult, RunPrimitiveInfo, SquirrelParse};
 use rayon::prelude::*;
+use TokenIdentifier::{GlobalSearchStep, Globals};
 
 pub mod load_order;
 pub mod single_file;
 
-pub fn analyse_state(file: Arc<FilePreAnalysis>) -> Arc<Scope> {//should this return anything? it technically just does everything inplace
-    
-    let scope = Scope::new((0, file.globalinfo.primitive.file.len()));
-    let steps = &file.clone().globalinfo.primitive.ast;
-    find_funcs(scope.clone(), &steps);
-    let state = Arc::new(RwLock::new(AnalysisState::new(file.clone(), scope.clone())));
-    analyse(state.clone(), &steps, file.untyped);
-    return scope.clone();
+pub struct ReferenceAnalysisStep{}
+impl analysis_runner::AnalysisStep for ReferenceAnalysisStep {
+    fn analyse(&self, run: &analysis_runner::SQDistinctVariant, analyser: &analysis_runner::Analyser) -> analysis_runner::AnalysisReturnType {
+        let asts: Arc<ASTParseResult> = analyser.get_prior_result(run).unwrap();
+        let globals: Arc<Globals> = analyser.get_prior_result(run).unwrap();
+
+        let scope = Scope::new((0, asts.run.file.len()));
+        let steps = &asts.run.ast;
+        find_funcs(scope.clone(), &steps);
+        let state = Arc::new(RwLock::new(AnalysisState::new(asts.run.clone(), globals, scope.clone())));
+        analyse(analyser, state.clone(), &steps, false);//TODO: Untyped identification
+        return Ok(Arc::new(ReferenceAnalysisResult{
+            scope: scope.clone(),
+        }));
+        //return scope.clone();
+    }
+}
+
+pub struct ReferenceAnalysisResult{
+    pub scope: Arc<Scope>,
+}
+impl AnalysisResult for ReferenceAnalysisResult {
+    fn get_errors(&self, context: &SQDistinctVariant) -> Vec<(usize, usize, String)> {
+        let mut errors = Vec::new();
+        for error in self.scope.errors.read().unwrap().iter(){
+            let err = error.value.render(&context.get_state());
+            errors.push((error.range.0, error.range.1, err));
+        }
+        let children = self.scope.all_children_rec();
+        for child in children.iter(){
+            let child_errors = child.errors.read().unwrap();
+            for error in child_errors.iter(){
+                let err = error.value.render(&context.get_state());
+                errors.push((error.range.0, error.range.1, err));
+            }
+        }
+        return errors;
+    }
 }
 
 pub struct Scope{//TODO: make most of these Traversable
@@ -228,8 +261,8 @@ pub enum LogicError{
 }
 
 impl LogicError{
-    pub fn render(&self, run: &FilePreAnalysis) -> String {
-        let mut text = format!("Error in {}\n", run.globalinfo.primitive.context.string_out_simple());
+    pub fn render(&self, run: &CompiledState) -> String {
+        let mut text = format!("Error in {}\n", run.string_out_simple());
         match self{
             LogicError::UndefinedVariableError(name) => {
                 text.push_str(&format!("Undefined variable: {}", name));
@@ -295,7 +328,7 @@ impl SpanningSearch<TypeDef> for TypeDef{
 
 
 
-pub fn generate_asts(file: FileInfo, id: usize) -> Vec<RunPrimitiveInfo> {
+pub fn generate_asts(file: FileInfo) -> Vec<RunPrimitiveInfo> {
     #[cfg(feature = "timed")]
     let start = std::time::Instant::now();
     let variants = get_file_varaints(file.clone());
@@ -325,7 +358,7 @@ pub fn generate_asts(file: FileInfo, id: usize) -> Vec<RunPrimitiveInfo> {
 
         //asts.push((variant.state.0, parse.unwrap())); //BAD NOT GOOD
         //asts.push(RunPrimitiveInfo::new(file.clone(), variant.state.0.into(), id, parse));
-        let mut ast = RunPrimitiveInfo::new(file.clone(), variant.state.0.into(), id, parse);
+        let mut ast = RunPrimitiveInfo::new(file.clone(), variant.state.0.into(), parse);
         ast
     }).collect::<Vec<_>>();
     #[cfg(feature = "timed")]
@@ -351,21 +384,29 @@ pub fn get_variable_local(scope: Arc<Scope>, name: &String) -> Option<Arc<Variab
     return None;
 }
 
-pub fn get_variable(scope: Arc<Scope>, state: Arc<RwLock<AnalysisState>>, name: &String) -> VariableSearch{
+pub fn get_variable(analyser: &Analyser, scope: Arc<Scope>, state: Arc<RwLock<AnalysisState>>, name: &String) -> VariantData<Arc<Variable>>{
     match scope.vars.index(name){
         Some(var) => {
-            return VariableSearch::Single(var.clone());//Todo: I should differ based on WHAT the variable is
+            let variant_id = analyser.get_distinct_variant(state.read().unwrap().file.as_ref()).unwrap();
+            return VariantData::Single(variant_id.clone(), var.clone())//Todo: I should differ based on WHAT the variable is
         },
         None => {}
     }
+    
     if let Some(parent) = &scope.parent{
         if let Some(parent) = parent.upgrade(){
-            return get_variable(parent.clone(), state, name);
+            return get_variable(analyser, parent.clone(), state, name);
         }
     }
     //Begin searching in the globals
-    let token = state.read().unwrap().file.get_global_internal(name.to_string());
+    //let token = state.read().unwrap().file.get_global_internal(name.to_string());
+    let distinct = state.read().unwrap().file.clone();
+    let token: VariantData<Arc<Variable>> = analyser.query_step(distinct.as_ref(), FileFilter::All(true), 
+    &mut |variant: &SQDistinctVariant, globals: &Arc<Globals>| {
+        globals.get(name)
+    } ).unwrap();
     //println!("Searching for {} in globals ", name);
+    //return token;
     return token;
     //Below is now redundant since GlobalSeardh no longer exists
     //match token{

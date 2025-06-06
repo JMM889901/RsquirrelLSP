@@ -1,7 +1,8 @@
 use core::panic;
 use std::{collections::HashMap, env, path::PathBuf, sync::{Arc, RwLock, Weak}};
 
-use analysis_common::{spanning_search::TraversableMap, variable::VariableReference, CompiledState, modjson::{load_base, load_mod}};
+use analysis_common::{spanning_search::TraversableMap, variable::VariableReference, modjson::{load_base, load_mod}};
+use analysis_runner::state_resolver::CompiledState;
 use ASTAnalyser::{analyse_state, find_funcs, load_order::{identify_file_tree, identify_globals, File, FilePreAnalysis, ParseType}, single_file::{analyse, collect_errs, AnalysisState}, LogicError, Scope};
 use common::{FileInfo, FileType};
 use ASTParser::{ast::Element, error::Error};
@@ -9,6 +10,7 @@ use ConfigAnalyser::get_file_varaints;
 use rayon::prelude::*;
 mod ValidSets;
 mod MemTests;
+mod RefactorTest;
 #[test]
 fn artificial_noexternal(){
     let path = "../TestSets/ValidStructure/noexternal";
@@ -350,7 +352,7 @@ pub fn run_paths(path: &String, natives: Option<&String>) -> Vec<Arc<RunData>>{
         for (key, value) in &file.undefined_vars_conditional{
             #[cfg(feature = "detailed")]
             println!("{}: {:?}", key, value);
-            if let Some(count) = failed_vars.get_mut(key){
+            if let Some(count) = failed_vars.get_mut::<String>(key){
                 *count += value.len();
             } else {
                 failed_vars.insert(key.clone(), value.len());

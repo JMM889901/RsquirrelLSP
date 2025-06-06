@@ -1,35 +1,40 @@
 use std::sync::{Arc, RwLock};
 
 use analysis_common::variable::{Variable, VariableReference, VariableSearch};
+use analysis_runner::Analyser;
 use common::FileInfo;
-use ASTParser::ast::{Element, Type, AST};
+use ASTParser::{ast::{Element, Type, AST}, RunPrimitiveInfo};
+use TokenIdentifier::Globals;
 
 use crate::{find_funcs, generate_asts, get_variable, get_variable_local, load_order::{FilePreAnalysis}, GlobalBridge, LogicError, Scope, TypeDef};
 
 pub struct AnalysisState{
     pub active_scope: Arc<Scope>,
     pub untyped: bool,
-    pub file: Arc<FilePreAnalysis>,
+    pub file: Arc<RunPrimitiveInfo>,
+    pub globals: Arc<Globals>,
 }
 impl AnalysisState{
-    pub fn new(file: Arc<FilePreAnalysis>, scope: Arc<Scope>) -> Self{
+    pub fn new(file: Arc<RunPrimitiveInfo>, globals: Arc<Globals>, scope: Arc<Scope>) -> Self{
         AnalysisState{
             active_scope: scope,
             untyped: false,
             file,
+            globals,
         }
     }
 }
 
-pub fn analyse(state: Arc<RwLock<AnalysisState>>, steps: &Vec<Element<AST>>, untyped: bool){
+pub fn analyse(analyser: &Analyser, state: Arc<RwLock<AnalysisState>>, steps: &Vec<Element<AST>>, untyped: bool){
     for step in steps{
         //AST::visit(step, context, leaf_func, leaf_func_post)
-        AST::visit(step, &state, &analyse_step_pre, &Some(analyse_step_post));
+        AST::visit(step, &(state.clone(), analyser), &analyse_step_pre, &Some(analyse_step_post));
     }
 }
 
-pub fn analyse_step_pre(state: &Arc<RwLock<AnalysisState>>, _: &Vec<()>, step: &Element<AST>) -> Vec<()>{
-    
+pub fn analyse_step_pre(context: &(Arc<RwLock<AnalysisState>>, &Analyser), _: &Vec<()>, step: &Element<AST>) -> Vec<()>{
+    let state = &context.0;
+    let analyser = context.1;
     let scope = state.read().unwrap().active_scope.clone();
     let untyped = state.read().unwrap().untyped.clone();
     //This is passed through AST::Visitor, so we dont visit outselves anymore
@@ -43,11 +48,11 @@ pub fn analyse_step_pre(state: &Arc<RwLock<AnalysisState>>, _: &Vec<()>, step: &
             if let Some(var) = variable.as_ref(){
                 if let AST::Function { name, args, returns, actions } = var.ast().value.as_ref(){
                     let mut write = state.try_write().unwrap();
-                    let reference = VariableReference::new(var.clone(), step.clone(), write.file.globalinfo.primitive.clone() );
+                    let reference = VariableReference::new(var.clone(), step.clone(), write.file.clone() );
                     let reference = Arc::new(reference);
                     write.active_scope.references.add_arc(reference.clone());
 
-                    let glob_var = write.file.globalinfo.globals.globals.index(name.value.as_ref()).unwrap().clone();
+                    let glob_var = write.globals.globals.index(name.value.as_ref()).unwrap().clone();
 
                     let global_map = GlobalBridge{
                         func: var.clone(),//TODO: May leak
@@ -80,7 +85,7 @@ pub fn analyse_step_pre(state: &Arc<RwLock<AnalysisState>>, _: &Vec<()>, step: &
             //TODO: This should be handled earlier than here
             //vars.push(Arc::new(Variable::new(step.clone())));
             if *global {
-                let global = state.read().unwrap().file.globalinfo.globals.get(name.value.as_ref()).unwrap().clone();
+                let global = state.read().unwrap().globals.get(name.value.as_ref()).unwrap().clone();
                 scope.vars.add_arc(name.value.to_string(), global.clone());
             } else {
                 scope.vars.add(name.value.to_string(), Variable::new(step.clone()));
@@ -91,7 +96,7 @@ pub fn analyse_step_pre(state: &Arc<RwLock<AnalysisState>>, _: &Vec<()>, step: &
             scope.types.add(name.clone(), TypeDef{ast: step.clone(), name: name.clone() });
             //Bit sketch
             if *global {
-                let global = state.read().unwrap().file.globalinfo.globals.get(&name);
+                let global = state.read().unwrap().globals.get(&name);
                 if let Some(global) = global{
                     scope.vars.add_arc(name.clone(), global.clone());
                 } else {
@@ -159,39 +164,17 @@ pub fn analyse_step_pre(state: &Arc<RwLock<AnalysisState>>, _: &Vec<()>, step: &
             
             for var in included_vars{
                 let name = var.value.to_string();
-                let variable = get_variable(scope.clone(), state.clone(), &name);
-                match variable{
-                    VariableSearch::None => {
-                        let mut errors = scope.errors.try_write().unwrap();
-                        errors.push(Element::new(LogicError::UndefinedVariableError(name), var.range));
-                    }
-                    VariableSearch::MultiIncomplete(set) => {
-                        let map = set.iter().map(|x| x.try_get_context()).collect::<Vec<_>>();
-                        let problematic_keys = state.read().unwrap().file.globalinfo.primitive.context.get_problematic_keys(&map);
-                        let mut errors = scope.errors.try_write().unwrap();
-                        errors.push(Element::new(LogicError::UndefinedVariableErrorConditional(problematic_keys, name), var.range));
-                        for var in set{
-                            let reference = VariableReference::new(var.clone(), step.clone(), state.read().unwrap().file.globalinfo.primitive.clone() );
-                            let reference = Arc::new(reference);
-                            state.try_write().unwrap().active_scope.references.add_arc(reference.clone());
-                            var.try_add_reference(reference.clone());
-                        }
-                    }
-                    VariableSearch::Single(var) => {
-                        let reference = VariableReference::new(var.clone(), step.clone(), state.read().unwrap().file.globalinfo.primitive.clone() );
-                        let reference = Arc::new(reference);
-                        state.try_write().unwrap().active_scope.references.add_arc(reference.clone());
-                        var.try_add_reference(reference.clone());
-                    }
-                    VariableSearch::Multi(set) => {
-                        for var in set{
-                            let reference = VariableReference::new(var.clone(), step.clone(), state.read().unwrap().file.globalinfo.primitive.clone() );
-                            let reference = Arc::new(reference);
-                            state.try_write().unwrap().active_scope.references.add_arc(reference.clone());
-                            var.try_add_reference(reference.clone());
-                        }
-                    }
-                }
+                let variable = get_variable(analyser, scope.clone(), state.clone(), &name);
+                variable.for_each(|context, var| {
+                    let reference = VariableReference::new(var.clone(), step.clone(), state.read().unwrap().file.clone() );
+                    let reference = Arc::new(reference);
+                    state.try_write().unwrap().active_scope.references.add_arc(reference.clone());
+                    var.try_add_reference(reference.clone());
+                });
+                variable.for_missing(|context| {
+                    let mut errors = scope.errors.try_write().unwrap();
+                    errors.push(Element::new(LogicError::UndefinedVariableError(name.to_string()), var.range));
+                });
             }
             let scope = Scope::add_child(scope, step.range);
             drop(untyped);
@@ -232,41 +215,18 @@ pub fn analyse_step_pre(state: &Arc<RwLock<AnalysisState>>, _: &Vec<()>, step: &
             //Todo: test for thread stuff
         }
         AST::Variable(name) => {
-            let var = get_variable(scope.clone(), state.clone(), name.value.as_ref());
+            let var = get_variable(analyser, scope.clone(), state.clone(), name.value.as_ref());
             //println!("Checking variable: {:?}", var);
-
-            match var{
-                VariableSearch::None => {
-                    let mut errors = scope.errors.try_write().unwrap();
-                    errors.push(Element::new(LogicError::UndefinedVariableError(name.value.to_string()), name.range));
-                }
-                VariableSearch::MultiIncomplete(set) => {
-                    let map = set.iter().map(|x| x.try_get_context()).collect::<Vec<_>>();
-                    let problematic_keys = state.read().unwrap().file.globalinfo.primitive.context.get_problematic_keys(&map);
-                    let mut errors = scope.errors.try_write().unwrap();
-                    errors.push(Element::new(LogicError::UndefinedVariableErrorConditional(problematic_keys, name.value.to_string()), name.range));
-                    for var in set{
-                        let reference = VariableReference::new(var.clone(), step.clone(), state.read().unwrap().file.globalinfo.primitive.clone() );
-                        let reference = Arc::new(reference);
-                        state.try_write().unwrap().active_scope.references.add_arc(reference.clone());
-                        var.try_add_reference(reference.clone());
-                    }
-                }
-                VariableSearch::Single(var) => {
-                    let reference = VariableReference::new(var.clone(), step.clone(), state.read().unwrap().file.globalinfo.primitive.clone() );
-                    let reference = Arc::new(reference);
-                    state.try_write().unwrap().active_scope.references.add_arc(reference.clone());
-                    var.try_add_reference(reference.clone());
-                }
-                VariableSearch::Multi(set) => {
-                    for var in set{
-                        let reference = VariableReference::new(var.clone(), step.clone(), state.read().unwrap().file.globalinfo.primitive.clone() );
-                        let reference = Arc::new(reference);
-                        state.try_write().unwrap().active_scope.references.add_arc(reference.clone());
-                        var.try_add_reference(reference.clone());
-                    }
-                }
-            }
+            var.for_each(|context, var| {
+                let reference = VariableReference::new(var.clone(), step.clone(), state.read().unwrap().file.clone() );
+                let reference = Arc::new(reference);
+                state.try_write().unwrap().active_scope.references.add_arc(reference.clone());
+                var.try_add_reference(reference.clone());
+            });
+            var.for_missing(|context| {
+                let mut errors = scope.errors.try_write().unwrap();
+                errors.push(Element::new(LogicError::UndefinedVariableError(*name.value.clone()), step.range));
+            });
         }
         AST::Error(err) => {
             let mut errors = scope.errors.try_write().unwrap();
@@ -286,7 +246,9 @@ pub fn analyse_step_pre(state: &Arc<RwLock<AnalysisState>>, _: &Vec<()>, step: &
     return Vec::new();
 }
 
-pub fn analyse_step_post(state: &Arc<RwLock<AnalysisState>>, _: &Vec<()>, elem: &Element<AST>) -> Vec<()>{
+pub fn analyse_step_post(context: &(Arc<RwLock<AnalysisState>>, &Analyser), _: &Vec<()>, elem: &Element<AST>) -> Vec<()>{
+    let state = context.0.clone();
+    let analyser = context.1;
     //Mostly reserved for exiting out of entered scopes
     let scope = state.read().unwrap().active_scope.clone();
     if scope.parent.is_none(){
@@ -355,7 +317,7 @@ pub fn is_expression_mutable(scope: Arc<Scope>, expression: &AST) -> bool{
 }
 #[cfg(test)]
 pub fn parse_file(file: FileInfo, id: usize){
-    let asts = generate_asts(file.clone(), id);
+    let asts = generate_asts(file.clone());
 
     for run in asts{
         let steps = run.ast.clone();
@@ -363,9 +325,9 @@ pub fn parse_file(file: FileInfo, id: usize){
         println!("\n\n\n{:?}\n\n\n\n", state);
         let scope = Scope::new((0, file.len()));
         find_funcs(scope.clone(), &steps);
-        let state = Arc::new(RwLock::new(AnalysisState::new(FilePreAnalysis::debugblank(), scope.clone())));
-        let untyped = state.read().unwrap().untyped.clone();
-        analyse(state.clone(), &steps, untyped);
+        //let state = Arc::new(RwLock::new(AnalysisState::new(FilePreAnalysis::debugblank(), scope.clone())));
+        //let untyped = state.read().unwrap().untyped.clone();
+        //analyse(state.clone(), &steps, untyped);
 
         for err in collect_errs(scope.clone()){
             if let LogicError::UndefinedVariableError(_) = err.value.as_ref(){

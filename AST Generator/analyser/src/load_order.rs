@@ -1,8 +1,9 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash, path::{self, PathBuf}, primitive, sync::{Arc, RwLock}};
 
-use analysis_common::{spanning_search::TraversableMap, variable::{Variable, VariableSearch}, CompiledState, HasState, RunPrimitiveInfo};
+use analysis_common::{spanning_search::TraversableMap, variable::{Variable, VariableSearch}};
+use analysis_runner::state_resolver::{CompiledState, HasState};
 use common::{FileInfo, FileType};
-use ASTParser::{ast::{Element, ExternalType, AST}, error::Error, external_resources::{parse_externalfuncs, parse_nativefuncs, ExternalResource, ExternalResourceEntry, ExternalResourceType}, Global};
+use ASTParser::{ast::{Element, ExternalType, AST}, error::Error, external_resources::{parse_externalfuncs, parse_nativefuncs, ExternalResource, ExternalResourceEntry, ExternalResourceType}, Global, RunPrimitiveInfo};
 use ConfigAnalyser::{force_get_states_statement, get_file_varaints};
 use PreprocessorParser::parse_condition_expression;
 use TokenIdentifier::{get_globals, Globals};
@@ -24,7 +25,6 @@ impl RunGlobalInfo{
             primitive: Arc::new(RunPrimitiveInfo{
                 file: FileInfo::new(String::new(), PathBuf::new(), String::new(), FileType::External),
                 context: CompiledState::from(HashMap::new()),
-                id: 0,
                 ast: Vec::new(),
             }),
         }
@@ -50,6 +50,7 @@ impl HasState for FilePreAnalysis{
     }
 }
 impl FilePreAnalysis{
+    
     pub fn debugblank() -> Arc<Self>{
         Arc::new(Self{
             //context: HashMap::new(),
@@ -268,6 +269,50 @@ pub enum ParseType{
     PreAnalysis,
     Dont,//Irrelevant now
 }
+pub fn find_externals_varaints(file: &FileInfo) -> Vec<(CompiledState, Globals)>{
+    //This is a hacky way to get the variants of an external file
+    //We assume that the file is a nativefuncs or external file
+    //This is not true for all external files but it is true for most
+    let text = file.text();
+    let externals = if file.ftype() == &FileType::NativeFuncs{
+        //TODO: Support the json format from tf1 natives dump 
+        let natives = parse_nativefuncs(&text).0;
+        natives.into_iter().map(|(cond, stuff)| {//Convert northstar nativefuncs to externalresources
+            (cond.clone(), stuff.iter().map(|x| {
+                ExternalResourceEntry{
+                    origin: None,
+                    resource: ExternalResourceType::Func(x.clone()),
+                }
+            }).collect::<Vec<_>>())
+        }).collect::<HashMap<_, _>>()
+    }else{
+        parse_externalfuncs(&text).0
+    };
+    let mut variants = Vec::new();
+    for (condition, _) in &externals{
+        //Bad slow and clunky
+        //Honestly i should rework externals not to be treated as files, this is lazy and causes nothing but problems
+        let parsed_conditions = force_get_states_statement(condition);
+        for cond in parsed_conditions{
+            let cond: CompiledState = cond.into();
+            let primitive_info = RunPrimitiveInfo::new(file.clone(), cond.clone(), vec![]);
+            let primitive_info = Arc::new(primitive_info);
+            let globals = externals.get(condition).unwrap_or(&vec![]).iter().map(|x| {
+                let ast = Element::new(AST::ExternalReference(x.clone()), (0, 0));
+                let var = Arc::new(Variable::external(ast, primitive_info.clone()));
+                let name = x.name();
+                return (name, var);
+            }).collect::<Vec<_>>();
+
+            let globals = Globals{
+                globals: TraversableMap::from(globals),
+            };
+            variants.push((cond, globals));
+        }
+    }
+    return variants;
+}
+
 
 type ParsedData = Vec<(Arc<RunGlobalInfo>)>;
 pub fn identify_globals(files: Vec<FileInfo>) -> Vec<(FileInfo, ParsedData)>{
@@ -300,11 +345,11 @@ pub fn identify_globals(files: Vec<FileInfo>) -> Vec<(FileInfo, ParsedData)>{
             //Everything in an external is global by definition so 
             let mut outcomes = Vec::new();
             for (unparsed_condition, set) in externals{
-                let parsed_conditions = force_get_states_statement(unparsed_condition);
+                let parsed_conditions = force_get_states_statement(&unparsed_condition);
         
                 for cond in parsed_conditions{
                     let cond: CompiledState = cond.into();
-                    let primitive_info = RunPrimitiveInfo::new(file_info.clone(), cond, id, vec![]);
+                    let primitive_info = RunPrimitiveInfo::new(file_info.clone(), cond, vec![]);
                     let primitive_info = Arc::new(primitive_info);
                     let globals = set.iter().map(|x| {
                         let ast = Element::new(AST::ExternalReference(x.clone()), (0, 0));
@@ -330,7 +375,7 @@ pub fn identify_globals(files: Vec<FileInfo>) -> Vec<(FileInfo, ParsedData)>{
             return (file_info, outcomes);
         }
 
-        let asts = generate_asts(file_info.clone(), id);
+        let asts = generate_asts(file_info.clone());
 
 
 
@@ -338,7 +383,7 @@ pub fn identify_globals(files: Vec<FileInfo>) -> Vec<(FileInfo, ParsedData)>{
             let ast = run.ast.clone();
             let context = run.context.clone();
 
-            let primitive_info = RunPrimitiveInfo::new(file_info.clone(), context.clone(), id, ast);
+            let primitive_info = RunPrimitiveInfo::new(file_info.clone(), context.clone(), ast);
             let primitive_info = Arc::new(primitive_info);
             let globals = get_globals(primitive_info.clone());
             let global_info = RunGlobalInfo{

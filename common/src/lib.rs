@@ -1,8 +1,20 @@
 use core::panic;
-use std::{io::Read, path::{Path, PathBuf}, str, sync::{Arc, RwLock}};
+use std::{hash::{DefaultHasher, Hash, Hasher}, io::Read, path::{Path, PathBuf}, str, sync::{Arc, RwLock}};
 
 #[derive(Debug, Clone)]
 pub struct FileInfo(Arc<FileInfoInternal>);
+impl PartialEq for FileInfo {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)//TODO: This is possibly scary?
+    }//As long as i clean up after myself and don't have multiple FileInfo for the same file this should probably maybe hopefully be not terrible
+}
+impl Eq for FileInfo {}
+impl Hash for FileInfo{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        //For now just hash using the ptr
+        state.write_usize(Arc::as_ptr(&self.0) as usize);
+    }
+}
 
 //Represents a given file
 //TODO: I make like a "purge after X point" function so i can keep relevant results from previous runs
@@ -209,6 +221,13 @@ impl FileInfo {
         self.read_text();
         return self.linecol_to_offset(line, col);
         panic!("uh, thats a problem"); // This probably won't happen? depends on how I rework this bit
+    }
+    pub fn id(&self) -> u64 {
+        //This is a unique ID for the file, based on the path
+        //This is used to identify the file in the analysis
+        let mut hasher = DefaultHasher::new();
+        self.0.path.hash(&mut hasher);
+        return hasher.finish();
     }
 }
 

@@ -67,7 +67,7 @@ pub fn load_mods(path: PathBuf) -> Result<Vec<Mod>, String>{
 pub fn load_mod(path: PathBuf) -> Result<Mod, String>{
 
     //Get externals.json and nativefuncs.json
-    let externals_path = path.join("externals.json");
+    let externals_path = path.join("externals.json");//TODO: Lol, just lol
     let natives_path = path.join("nativefuncs.json");
     let externals = std::fs::metadata(&externals_path).is_ok();
     let natives = std::fs::metadata(&natives_path).is_ok();

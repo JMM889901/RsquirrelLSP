@@ -11,6 +11,8 @@ use std::time::Duration;
 
 use analysis_common::spanning_search::SpanningSearch;
 use analysis_common::variable::{Variable, VariableExternal};
+use analysis_runner::comp_tree::VariantData;
+use analysis_runner::{Analyser, AnalyserSettings, AnalysisError, AnalysisResultInternal, AnalysisStage, HasVariantID, PreserveType, SQDistinctVariant, VariantID};
 use rayon::iter::IntoParallelIterator;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::request::{GotoDeclarationParams, GotoDeclarationResponse, References};
@@ -18,12 +20,15 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 use rayon::prelude::*;
 
-use ASTAnalyser::load_order::{identify_file_tree, identify_globals, File, FilePreAnalysis, ParseType};
+use ASTAnalyser::load_order::{find_externals_varaints, identify_file_tree, identify_globals, File, FilePreAnalysis, ParseType};
 use ASTAnalyser::single_file::{analyse, collect_errs, AnalysisState};
-use ASTAnalyser::{analyse_state, find_funcs, LogicError, Scope};
-use analysis_common::CompiledState;
+use ASTAnalyser::{find_funcs, LogicError, ReferenceAnalysisResult, ReferenceAnalysisStep, Scope};
 use analysis_common::modjson::{load_mod, load_mods, Script};
-use common::FileInfo;
+use common::{FileInfo, FileType};
+use ASTParser::{ASTParseResult, ASTParseStep, RunPrimitiveInfo};
+use ConfigAnalyser::get_file_varaints;
+use TokenIdentifier::{GlobalSearchStep, Globals};
+
 
 
 #[tokio::main]
@@ -32,7 +37,13 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::new(|client| Backend { client, initialized: RwLock::new(false), load_order: RwLock::new(Vec::new()), last_run: RwLock::new(Vec::new()), hint_cache: RwLock::new(HashMap::new()) });
+    let (service, socket) = LspService::new(|client| Backend { 
+        client, 
+        initialized: RwLock::new(false), 
+        load_order: RwLock::new(Vec::new()), 
+        last_run: RwLock::new(Vec::new()), 
+        hint_cache: RwLock::new(HashMap::new()), 
+        last_analysis: RwLock::new(None) });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 
@@ -43,6 +54,7 @@ struct Backend {
     initialized: RwLock<bool>,
     load_order: RwLock<Vec<FileInfo>>,
     last_run: RwLock<Vec<RunData>>,
+    last_analysis: RwLock<Option<Analyser>>,
     hint_cache: RwLock<HashMap<String, FileNeedsInlayHintPos>>,//This, is stupid
 }
 
@@ -120,143 +132,129 @@ impl Backend{
             let update= self.initialize_load_order(folders.clone()).await;
             return self.parse(url, text, update).await;
     }
+
+
     async fn parse(&self, url: Url, text: &String, update: bool) -> bool {
-
-
-        //TODO: This should only reall need doing once at the start and whenever the mod.json changes
-        //    *self.initialized.write().unwrap() = true;
-        //}
-        let path = url.to_file_path().unwrap();
-
-        //Invalidate anything with a lower order:
-        //todo lol
+        //let path = url.to_file_path().unwrap();
 
         let files = self.load_order.read().unwrap().clone();
+        let path = url.to_file_path().unwrap();
 
-        //self.client.log_message(MessageType::INFO, format!("edited file: {:?}", path)).await;
+        let mut did_new_analyser: bool = false;
+        let mut clean_time: Duration = Duration::from_secs(0);
+        let mut preproc_time: Duration = Duration::from_secs(0);
+        let mut analysis_duration: Duration = Duration::from_secs(0);
 
-        let mut hit_changed = false;
-        let mut unchanged = Vec::new();
-        let mut changed = Vec::new();
-        
-        
-        for script in files.iter(){
-            //println!("Loading file: {}", script.path);
-            //self.client.log_message(MessageType::INFO, format!("Loading file: {:?}", script.path())).await;
-            if script.path() == &path{
-                //self.client.log_message(MessageType::INFO, format!("direct reading file {:?}", script.path())).await;
+        let parse_start = std::time::Instant::now();
+        let diags = { //Do this just to make it stop complaining about awaits, i know it sucks
+        let mut analyser = self.last_analysis.write().unwrap();
+        if analyser.is_none() || update {
+            let mut new_analyser = Analyser::new_settings(AnalyserSettings{prebuild_trees: analysis_runner::PrebuildTrees::Always});
+            new_analyser.add_step::<ASTParseResult>(Box::new(ASTParseStep{}), PreserveType::Unchanged, AnalysisStage::Parse);
+            new_analyser.add_step::<Globals>(Box::new(GlobalSearchStep{}), PreserveType::Unchanged, AnalysisStage::GlobalIdent);
+            new_analyser.add_step::<ReferenceAnalysisResult>(Box::new(ReferenceAnalysisStep{}), PreserveType::Never, AnalysisStage::FunctionIdent);
+            //TODO: This is unfortunate, it seems that erasing the previous run costs almost 20ms, i assume due to all the stuff its dropping
+            //That seems like a LOT of time honestly, I don't really trust it
+            analyser.replace(new_analyser);
+            did_new_analyser = true;
+        }
+        let analyser = analyser.as_mut().unwrap();
+
+
+        for (index, script) in files.iter().enumerate() {
+            if !update && script.path() == &path {
+                //If the file is already in the load order, we can just update it
                 script.purge();
                 script.set_text(text.clone());
-                hit_changed = true;
-                changed.push(script.clone());
-                continue;
-            } else if hit_changed{
-                //script.purge();
-                //changed.push(script.clone());
-            } else if update{
+                let clean_start = std::time::Instant::now();
+
+                analyser.parralel_clean_single(script, index);
+                clean_time = clean_start.elapsed();
+
+                //TODO: This only preserves the text of other runs
+                //The prior approach preserved precprocessed variants as well, this is an expensive loss
+                break;
+            }
+            else if update {
                 script.purge();
-                changed.push(script.clone());
-                continue;
-            } 
-            let last = self.get_run_uri(&Url::from_file_path(script.path()).unwrap());
-            if let Some(last) = last{
-                let mut variants = last.file.variants.get_direct();
-                let variants = variants.iter().map(|x| {
-                    x.globalinfo.clone()
+            }
+        }
+
+
+        let preproc_start = std::time::Instant::now();
+        let variants = files.par_iter().map(|x| {
+            let file = x.clone();
+            if (&FileType::External == file.ftype() || file.ftype() == &FileType::NativeFuncs) {//This is ass
+                let externals = find_externals_varaints(&file);
+                let mut map: HashMap<VariantID, Arc<dyn AnalysisResultInternal>> = HashMap::new();
+                let externals = externals.into_iter().map(|external| {
+                    let sq_variant = SQDistinctVariant::new(
+                        file.clone(),
+                        external.0.clone().into(),
+                        "".to_string() //TODO: ew, treating these as regular files was a mistake
+                    );
+                    let id = sq_variant.get_id();
+                    map.insert(id, Arc::new(external.1));
+                    return sq_variant;
                 }).collect::<Vec<_>>();
-                unchanged.push((script.clone(), variants))
-            } else {
-                changed.push(script.clone());
+                analyser.push_results(map);
+                return (file, externals);
             }
-        }
-        //Catchall
-        if !hit_changed{
-            for script in files.iter(){
-                if script.path() == &path{
-                    script.purge();
-                    for (file, _) in &unchanged{
-                        changed.push(file.clone());
-                    }
-                    unchanged.clear();
-                }
+            let variants = get_file_varaints(file.clone());
+            let variants = variants.into_iter().map(|variant| {
+                let sq_variant = SQDistinctVariant::new(
+                    file.clone(),
+                    variant.state.clone().into(),
+                    variant.to_text(),
+                );
+                return sq_variant;
+            }).collect::<Vec<_>>();
+            return (file, variants);
+        }).collect::<Vec<_>>();
+        preproc_time = preproc_start.elapsed();
+        //TODO: Reuse existing analyser if it exists, just make sue to call clean
+        analyser.variants = variants;
+
+        //TODO: Look into using custombyfile to only invalidate this if there is a reference, but even then the simple fact that i can define a new global function kind of ruins that idea
+
+        let analysis_start = std::time::Instant::now();
+        analyser.run_steps();
+        analysis_duration = analysis_start.elapsed();
+        let mut all_diags = analyser.variants.iter().map(|(file, variants)|{
+            let mut errors = Vec::new();
+            for variant in variants {
+                errors.extend(analyser.get_errors(variant));
+                //TODO: Dedup errors as applicable
             }
-        }
-        let updated = changed.len();
-        //Should CFG this
-        let time_preprocess_start = std::time::Instant::now();
-        let time_parse_start = std::time::Instant::now();
-        let preprocessed = identify_globals(changed);
-        let time_parse_end = std::time::Instant::now();
-        unchanged.extend(preprocessed);
-        
-        let mut tree:Vec<Arc<File>> = Vec::new();
-        {//Funky thread shenanigans
+            let mut diags = Vec::new();
+            for error in errors{
 
-
-            tree = identify_file_tree(unchanged);
-        }
-        let time_preprocess_end = std::time::Instant::now();
-        //self.client.log_message(MessageType::INFO, format!("starting analysis on {:?}", tree.iter().map(|x| x.load.path()))).await;
-
-        let time_analysis_start = std::time::Instant::now();
-        let iter = tree.into_par_iter();
-        let this_run: Vec<(Url, RunData)> = iter.filter_map(|file| {
-            let is_this_file = file.load.path() == &path;
-            //self.client.log_message(MessageType::INFO, format!("offsets are {:?}", file.load.offsets())).await;
-
-            if file.parse_type == ParseType::PreAnalysis{
-                return None;
-            }
-            let mut diagnostics = Vec::new();
-            let mut this_file = Vec::new();
-
-            for variant in file.variants.get_direct(){
-                //self.client.log_message(MessageType::INFO, format!("Analysing file: {:?} variant: {:?}", file.load.name(), variant.primitive.context)).await;
-                let scope = analyse_state(variant.clone());
-                for err in collect_errs(scope.clone()){
-                    //let message = format!("{:?} at \n {} \n", err, file.load.text()[err.range.0 .. err.range.1].to_string());
-                    let message = format!("{}", err.value.render(variant));
+                if let AnalysisError::AnalysisError(message, position) = error {
                     let range = Range{
-                        start: Self::offset_to_linecol(&file.load, err.range.0),
-                        end: Self::offset_to_linecol(&file.load, err.range.1)
+                        start: Self::offset_to_linecol(&file, position.0),
+                        end: Self::offset_to_linecol(&file, position.1)
                     };
                     let mut diag = Diagnostic::new_simple(range, message);
-                    if matches!(err.value.as_ref(), LogicError::SyntaxWarning(_)) {
-                        diag.severity = Some(DiagnosticSeverity::WARNING);
-                    }
-                    diagnostics.push(diag);
+                    diag.severity = Some(DiagnosticSeverity::ERROR);
+                    diag.source = Some("Rsquirrel Analysis".to_string());//TODO: track the step
+                    diags.push(diag);
                 }
-                this_file.push((variant.clone(), scope.clone()));
             }
-            let rundata = RunData{
-                file: file.clone(),
-                outputs: this_file,
-                diagnostics: diagnostics
-            };
-            let mut newurl;
-            if is_this_file{
-                newurl = url.clone();//This is to ensure query stuff stays
-            } else {
-                newurl = Url::from_file_path(file.load.path()).unwrap();
-            }
-            //self.client.publish_diagnostics(newurl, diagnostics, None).await;
-            return Some((newurl, rundata));
-        }).collect();
-        let time_analysis_end = std::time::Instant::now();
-        self.last_run.write().unwrap().clear();
-        for (url, rundata) in this_run{
-            self.client.publish_diagnostics(url, rundata.diagnostics.clone(), None).await;
-            self.last_run.write().unwrap().push(rundata);
+            return (file.clone(), diags);
+        }).collect::<Vec<_>>();
+        all_diags
+        };
+        let parse_duration = parse_start.elapsed();
+
+        let report_start_time = std::time::Instant::now();
+        for (file, diags) in diags{
+            self.client.publish_diagnostics(Url::from_file_path(file.path()).unwrap(), diags.clone(), None).await;
         }
-        let message = format!("Finished analysing {} files, took {:?}ms\n\t Parsing: {:?}\n\t Preproc: {:?}\n\t Analysis: {:?}",
-            updated,
-            time_analysis_end.duration_since(time_preprocess_start).as_millis(),
-            time_parse_end.duration_since(time_parse_start).as_millis(),
-            time_preprocess_end.duration_since(time_preprocess_start).as_millis(),
-            time_analysis_end.duration_since(time_analysis_start).as_millis()
-        );
-        self.client.log_message(MessageType::INFO, message ).await;
-        return hit_changed;
+        let report_duration = report_start_time.elapsed();
+        self.client.log_message(MessageType::INFO, format!("Parsed files: {:?} in {:?}, reported diagnostics in {:?}, analysis took {:?}", files.len(), parse_duration, report_duration, analysis_duration)).await;
+        self.client.log_message(MessageType::INFO, format!("Cleaned files in {:?}, preprocessed in {:?}", clean_time, preproc_time)).await;
+        self.client.log_message(MessageType::INFO, format!("Did create new analyser: {}", did_new_analyser)).await;
+        return true;
     }
 
     pub fn get_run_uri(&self, path: &Url) -> Option<RunData>{
@@ -296,7 +294,7 @@ impl LanguageServer for Backend {
                 declaration_provider: Some(DeclarationCapability::Simple(true)),
                 references_provider: Some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
-                inlay_hint_provider: Some(OneOf::Left(true)),
+                inlay_hint_provider: Some(OneOf::Left(false)),
                 ..Default::default()
             },
             ..Default::default()
@@ -368,6 +366,68 @@ impl LanguageServer for Backend {
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>>{
         let pos = params.text_document_position.position;
         let uri = params.text_document_position.text_document.uri;
+
+        let last_analysis = { self.last_analysis.write().unwrap().is_some() };
+        if !last_analysis{
+            self.client.log_message(MessageType::ERROR, "No analysis found, please run the analyser first").await;
+            return Ok(None);
+        }
+
+        let file_references: std::result::Result<VariantData<Arc<ReferenceAnalysisResult>>, AnalysisError> = {
+            let last_analysis = self.last_analysis.read().unwrap();
+            if let Some(analyser) = last_analysis.as_ref() {
+                analyser.get_variant_results_filepath(uri.to_file_path().unwrap())
+            } else {
+                Err(AnalysisError::GenericError("No analysis found".to_string()))
+            }
+        };
+
+        if file_references.is_err(){
+            self.client.log_message(MessageType::ERROR, format!("Failed to get file references: {:?}", file_references.err())).await;
+            return Ok(None);
+        }
+        let file_references = file_references.unwrap();
+        let refs = file_references.map(&mut |variant, data| {
+            let offset = variant.get_file().offsets()[(pos.line) as usize];
+            let offset = offset + pos.character as usize;
+            data.scope.find_uses(offset)
+        });
+
+        if refs.is_none(){
+            return Ok(None);
+        }
+
+        let links = refs.map(&mut |context, data| {
+            let new = data.iter().map( |reference| {
+                let source_file = reference.source_run.file.clone();
+                let mut url = Url::from_file_path(source_file.path()).unwrap();
+                let callcontext = reference.source_run.context.clone();
+                let linecol = Self::offset_to_linecol(&source_file, reference.source.range.0);
+                let target = reference.target.clone();
+                if let Variable::Global(var) = target.as_ref(){
+                    url.set_query(Some(&format!("condition={{{}}}", callcontext.string_out_simple())));
+                }//Technically i should be able to only show this in specific cases but thats a lot of logic i dont want to write right now
+                let mut write = self.hint_cache.write().unwrap();//Should this store the context? it does when getting decl
+                write.insert(callcontext.string_out_simple(), FileNeedsInlayHintPos{
+                    pos: linecol
+                });
+                drop(write);
+                Location{
+                    uri: url,
+                    range: Range { start: linecol, end: Self::offset_to_linecol(&source_file, reference.source.range.1) },
+                }
+            });
+            let links = new.collect::<Vec<Location>>();
+            return links;
+        });
+        let links = links.into_flatten();
+        if links.is_empty(){
+            return Ok(None);
+        }
+        return Ok(Some(links));
+
+        /*
+        
         let run = self.get_run_uri(&uri);
         if run.is_none(){
             panic!("No run found for uri: {:?}", uri); //Panicking is bad but its for debugging,
@@ -411,6 +471,7 @@ impl LanguageServer for Backend {
         });
         let links = links.collect::<Vec<Location>>();
         return Ok(Some(links));
+        */
 
     }
 
@@ -474,6 +535,78 @@ impl LanguageServer for Backend {
     async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
         let pos = params.text_document_position_params.position;
         let uri = params.text_document_position_params.text_document.uri;
+        
+        
+        let last_analysis = { self.last_analysis.write().unwrap().is_some() };
+        if !last_analysis{
+            self.client.log_message(MessageType::ERROR, "No analysis found, please run the analyser first").await;
+            return Ok(None);
+        }
+
+        let file_references: std::result::Result<VariantData<Arc<ReferenceAnalysisResult>>, AnalysisError> = {
+            let last_analysis = self.last_analysis.read().unwrap();
+            if let Some(analyser) = last_analysis.as_ref() {
+                analyser.get_variant_results_filepath(uri.to_file_path().unwrap())
+            } else {
+                Err(AnalysisError::GenericError("No analysis found".to_string()))
+            }
+        };
+
+        if file_references.is_err(){
+            self.client.log_message(MessageType::ERROR, format!("Failed to get file references: {:?}", file_references.err())).await;
+            return Ok(None);
+        }
+        let file_references = file_references.unwrap();
+        let decls = file_references.map(&mut |variant, data| {
+            let offset = variant.get_file().offsets()[(pos.line) as usize];
+            let offset = offset + pos.character as usize;
+            data.scope.find_declaration(offset)
+        });
+
+        if decls.is_none(){
+            return Ok(None);
+        }
+        //TODO: Merge same file/ast references
+        self.hint_cache.write().unwrap().clear();//TODO: Janky
+        let multi = !matches!(decls, VariantData::Single(_, _));
+        let locs = decls.map(&mut |context, data| {
+            let multi_inner = multi || data.len() > 1;
+            let new = data.iter().map( |reference| {
+                let target = reference.target.clone();
+                let target_file = target.file().unwrap_or(context.get_file().clone());
+                let mut url = Url::from_file_path(target_file.path()).unwrap();
+                let linecol = Self::offset_to_linecol(&target_file, target.get_range_precise().0);
+                if multi_inner{
+                    let mut context_str;
+                    if let Variable::Global(var) = target.as_ref(){
+                        context_str = target.try_get_context().string_out_simple();
+                    } else{
+                        context_str = context.get_state().string_out_simple();
+                    }
+                    url.set_query(Some(&format!("condition={{{}}}", context_str)));
+                    let mut write = self.hint_cache.write().unwrap();
+                    write.insert(context_str, FileNeedsInlayHintPos{
+                        pos: linecol
+                    });
+                    drop(write);
+                }
+                LocationLink{
+                    origin_selection_range: None,
+                    target_uri: url,
+                    target_range: Range { start: Self::offset_to_linecol(&target_file, target.get_range_precise().0), end: Self::offset_to_linecol(&target_file, target.get_range_precise().1) },
+                    target_selection_range: Range { start: Self::offset_to_linecol(&target_file, target.get_range_precise().0), end: Self::offset_to_linecol(&target_file, target.get_range_precise().1) },
+                }
+            });
+            let links = new.collect::<Vec<LocationLink>>();
+            return links;
+        });
+        let locs = locs.into_flatten();
+        if locs.is_empty(){
+            return Ok(None);
+        }
+        let response = GotoDeclarationResponse::Link(locs);
+        return Ok(Some(response));
+        /*
         let run = self.get_run_uri(&uri);
         if run.is_none(){
             return Ok(None);
@@ -527,6 +660,7 @@ impl LanguageServer for Backend {
         let decls = decls.collect::<Vec<LocationLink>>();
         let response = GotoDeclarationResponse::Link(decls);
         return Ok(Some(response));
+        */
     }
 
     async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
@@ -555,7 +689,7 @@ async fn test_northstar() {
         name: "Northstar".to_string()
     }];
     println!("Base: {:?}", url);
-    let (service, _) = LspService::new(|client| Backend { client, initialized: RwLock::new(false), load_order: RwLock::new(Vec::new()), last_run: RwLock::new(Vec::new()), hint_cache: RwLock::new(HashMap::new()) });
+    let (service, _) = LspService::new(|client| Backend { client, initialized: RwLock::new(false), load_order: RwLock::new(Vec::new()), last_run: RwLock::new(Vec::new()), hint_cache: RwLock::new(HashMap::new()),     last_analysis: RwLock::new(None) });
     service.inner().initialize_load_order(Some(workspace_folders)).await;
     
     service.inner().parse(url, &"".to_string(), true).await;
@@ -577,7 +711,7 @@ async fn get_declaration() {
         name: "Northstar".to_string()
     }];
     println!("Base: {:?}", url);
-    let (service, _) = LspService::new(|client| Backend { client, initialized: RwLock::new(false), load_order: RwLock::new(Vec::new()), last_run: RwLock::new(Vec::new()), hint_cache: RwLock::new(HashMap::new()) });
+    let (service, _) = LspService::new(|client| Backend { client, initialized: RwLock::new(false), load_order: RwLock::new(Vec::new()), last_run: RwLock::new(Vec::new()), hint_cache: RwLock::new(HashMap::new()), last_analysis: RwLock::new(None) });
     service.inner().initialize_load_order(Some(workspace_folders)).await;
     println!("{:?}", service.inner().load_order.read().unwrap());
     service.inner().parse(url.clone(), &"".to_string(), true).await;
@@ -629,7 +763,7 @@ async fn get_uses() {
         name: "Northstar".to_string()
     }];
     println!("Base: {:?}", url);
-    let (service, _) = LspService::new(|client| Backend { client, initialized: RwLock::new(false), load_order: RwLock::new(Vec::new()), last_run: RwLock::new(Vec::new()), hint_cache: RwLock::new(HashMap::new()) });
+    let (service, _) = LspService::new(|client| Backend { client, initialized: RwLock::new(false), load_order: RwLock::new(Vec::new()), last_run: RwLock::new(Vec::new()), hint_cache: RwLock::new(HashMap::new()), last_analysis: RwLock::new(None) });
     service.inner().initialize_load_order(Some(workspace_folders)).await;
     println!("{:?}", service.inner().load_order.read().unwrap());
     service.inner().parse(url.clone(), &"".to_string(), true).await;
@@ -667,3 +801,4 @@ async fn get_uses() {
     }
 
 }
+

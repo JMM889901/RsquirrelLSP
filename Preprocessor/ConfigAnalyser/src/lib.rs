@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::{self, read_to_string}, hash::Hash, path::PathBuf, sync::Arc};
 
 use common::{FileInfo, FileType};
-use ConfigPredictor::get_states;
+use ConfigPredictor::{get_states, state::SqCompilerState};
 use PreprocessorParser::*;
 //use sq_file_variant::SqFileVariant;
 //pub use variant_parser::variant::SqFileVariant;
@@ -29,6 +29,12 @@ pub fn get_file_varaints(file: FileInfo) -> Vec<SqFileVariant>{
     //}
     return variants;
 }
+pub fn get_condition_variants(file: FileInfo) -> Vec<SqCompilerState>{
+    let node = parse_file(&file.text(), file.run_on());
+    let states = get_states(&node.ast);
+    return states;
+}
+
 
 #[test]
 fn integration_mp_only(){
@@ -39,7 +45,7 @@ fn integration_mp_only(){
     assert_eq!(result.len(), 1);
 }
 
-pub fn force_get_states_statement(text: String) -> Vec<HashMap<String, bool>>{
+pub fn force_get_states_statement(text: &String) -> Vec<HashMap<String, bool>>{
     //I cannot express how HORRENDOUSLY inefficient this is, but it works for now
     //Code\AST Generator\analyser\src\load_order.rs
     

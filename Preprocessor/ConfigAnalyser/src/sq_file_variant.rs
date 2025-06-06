@@ -10,7 +10,6 @@ pub struct SqFileVariant{
     pub state: SqCompilerState,
     content: String, //If i can store the AST here instead of the string i can avoid a lot of unwanted copies
     //pub time_wasted: RwLock<Duration>
-
 }
 impl Parse for SqFileVariant{
     type PositionRepr = <str as Parse>::PositionRepr;
@@ -89,8 +88,18 @@ impl SqFileVariant{
 
         }
     }
+    pub fn from_text(text: String, state: SqCompilerState) -> Self{
+        return SqFileVariant{
+            content: text,
+            state,
+            //time_wasted: RwLock::new(Duration::from_secs(0))
+        }
+    }
     pub fn text(&self) -> &String{
         return &self.content
+    }
+    pub fn to_text(self) -> String{
+        return self.content
     }
     pub fn stateless(text: String) -> Self{
         return SqFileVariant{

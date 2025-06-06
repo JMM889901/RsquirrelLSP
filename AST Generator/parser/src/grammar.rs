@@ -609,9 +609,15 @@ peg::parser!{
         //[#Pos:334]
         rule update_offset() = "[#Pos:" filepos:$int() "]" parsepos:position!() { let diff = filepos.parse::<isize>().unwrap() - parsepos as isize; *offset.borrow_mut() = diff; }
 
-        rule catchall() -> Element<AST> = start:position() string:(a:(!("#"/"\r"/"\n"/"{"/"}"/"//"/"/*")char:[_] {char})+ {a.iter().collect::<String>()}) end:position() {
+        rule catchall() -> Element<AST> = start:position() string:(a:(!("#"/"\r"/"\n"/"{"/"}"/"//"/"/*")char:[_] {char})+ {a.iter().collect::<String>()}) end:position() ( {? 
+        if string.chars().all(|c| c.is_whitespace()) {
+            return Err("Whitespace only token");//Replacing this entire parser soon, cba doing a proper fix
+        } else {
+            return Ok(());
+        }}) {
             //return the error as an ast element
             //println!("Unknown token: {:?}", string);
+
             let err;
             if string == ";"{
                 //err = Error::UnwantedTokenWarning(string.clone());
