@@ -15,6 +15,7 @@ use analysis_runner::comp_tree::VariantData;
 use analysis_runner::state_resolver::CompiledState;
 use analysis_runner::{Analyser, AnalyserSettings, AnalysisError, AnalysisResultInternal, AnalysisStage, CacheTrees, HasVariantID, PrebuildTrees, PreserveType, SQDistinctVariant};
 use rayon::iter::IntoParallelIterator;
+use serde_json::Value;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::request::{GotoDeclarationParams, GotoDeclarationResponse, References};
 use tower_lsp::lsp_types::*;
@@ -24,7 +25,7 @@ use rayon::prelude::*;
 use ASTAnalyser::load_order::{find_externals_varaints, identify_file_tree, identify_globals, File, FilePreAnalysis, ParseType};
 use ASTAnalyser::single_file::{analyse, collect_errs, AnalysisState};
 use ASTAnalyser::{find_funcs, LogicError, ReferenceAnalysisResult, ReferenceAnalysisStep, Scope};
-use analysis_common::modjson::{load_mod, load_mods, Script};
+use analysis_common::modjson::{load_mod, load_mods, load_rson, Script};
 use common::{FileInfo, FileType};
 use ASTParser::{ASTParseResult, ASTParseStep, RunPrimitiveInfo};
 use ConfigAnalyser::get_file_varaints;
@@ -34,7 +35,7 @@ use TokenIdentifier::{GlobalSearchStep, Globals};
 
 #[tokio::main]
 async fn main() {
-        
+
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
@@ -74,8 +75,29 @@ pub struct FileNeedsInlayHintPos{
 impl Backend{
 
     async fn initialize_load_order(&self, workspace_folders: Option<Vec<WorkspaceFolder>>) -> bool {
-
         let mut moddata = Vec::new();
+
+
+        let config = self.client.configuration(vec![ConfigurationItem{
+            scope_uri: None,
+            section: Some("SquirrelLSP.VanillaScripts".to_string()),
+        }]).await;
+        if let Ok(config) = config {
+            if let Some(Value::Array(vanilla)) = config.first() {
+                for value in vanilla {
+                    if let Value::String(path) = value {
+                        let rson = load_rson(PathBuf::from_str(path).unwrap());
+                        if let Ok(rson) = rson{
+                            moddata.push(rson);
+                        } else {
+                            self.client.log_message(MessageType::ERROR, format!("Failed to load vanilla scripts: {:?}", rson.err())).await;
+                        }
+                    }
+                }
+            }
+        } else {
+            self.client.log_message(MessageType::ERROR, "Failed to load configuration for vanilla scripts").await;
+        }
         //For now assume we are in the root of a mod, so json is ./mod.json
         match workspace_folders{
             Some(workspace_folders) => {

@@ -156,7 +156,11 @@ impl FileInfo {
         let mut contents = String::new();
 
         if let Ok(mut file) = file{
-            file.read_to_string(&mut contents).expect("Failed to read file");
+            //file.read_to_string(&mut contents).expect(format!("Failed to read file {:?}", self.0.path).as_str());
+            let mut buf = vec![];
+            file.read_to_end (&mut buf).expect(format!("Failed to read file {:?}", self.0.path).as_str());
+            contents = String::from_utf8_lossy (&buf).to_string();//Generated nut files include the copyright symbol
+            //Lol
         } else {
             contents = String::new();
             //Not the biggest fan, but we need to because northstar loads sh_gamemode_fw

@@ -67,6 +67,8 @@ dependencies = [
  "analysis_runner",
  "common",
  "rayon",
+ "serde",
+ "serde_json",
  "tokio",
  "tower-lsp",
 ]

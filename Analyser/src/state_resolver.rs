@@ -407,7 +407,7 @@ fn test_multistep_cancel_merge(){
 }
 }
 mod merge_tests{
-
+use super::*;
 #[test]
 fn test_merge_double_fail(){
     let mut map1 = HashMap::new();

@@ -103,16 +103,19 @@ pub fn load_mods(path: PathBuf) -> Result<Vec<Mod>, String>{
 pub fn load_rson(path: PathBuf) -> Result<Mod, String>{
     //For now im just going to assume this is scripts.rson
     //If you want to write your own rsons errrrrr please dont 
-    let rson_file = path.join("scripts.rson");
+    let mut rson_file = path.join("scripts.rson");
     if !rson_file.exists() {
-        return Err(format!("RSON file not found: {:?}", rson_file));
+        rson_file = path.join("mod/scripts/vscripts/scripts.rson");
     }
     let text = read_to_string(&rson_file).map_err(|e| format!("Why no read :( {}", e))?;
     let mod_pure = rson::rson(&text, &path.file_name().unwrap().to_string_lossy().to_string()).map_err(|e| format!("Failed to parse RSON: {}", e))?;
     let mut scripts = Vec::new();
-    let scriptpath = path.join("mod/scripts/vscripts");
+    let mut script_path = path.clone();
+    if !script_path.ends_with("vscripts") {
+        script_path = script_path.join("mod/scripts/vscripts");
+    }
     scripts.extend(mod_pure.scripts.iter().map(|x| {
-        let scriptpath = scriptpath.join(&x.path);
+        let scriptpath = script_path.join(&x.path);
         let name = scriptpath.file_name().unwrap_or_default().to_string_lossy().to_string();//ew, gross
         FileInfo::new(
             name,
