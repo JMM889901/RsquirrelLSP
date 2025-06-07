@@ -1,8 +1,44 @@
-use std::path::{self, Path, PathBuf};
+use std::{fs::read_to_string, path::{self, Path, PathBuf}};
 //Tools for deserializing mod.json files
 use super::*;
 use common::{FileInfo, FileType};
 use serde::{Deserialize, Serialize};
+
+
+peg::parser!{
+    pub grammar rson(rsonname: &String) for str {
+        rule _() = quiet!{[' ' | '\t' | '\n' | '\r']*}
+
+
+
+		rule ws() = quiet!{[' ' | '\t' | '\n' | '\r']*}
+		rule ws1() = quiet!{[' ' | '\t']*}
+		rule nl() = ws1() (comment()? ws1() "\n" ws1())+ ws1()
+		rule comment() = quiet!{ws() "//" (!['\n'] [_])*} / quiet!{ws() "/*" (!"*/" [_])* "*/"}
+		rule string() -> String
+			= "\"" s:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '/' | '_' | '.' | '-' ]*) "\"" {s.to_string()}
+		rule when_scripts() -> Vec<Script>
+			= "When:" ws() "\"" run_on:$(['a'..='z' | 'A'..='Z' | ' ' | '|' | '(' | ')' | '&' | '0'..='9' | '_']*) "\"" ws() 
+				"Scripts:" ws() "[" ws() s:loaded_file(run_on.to_string())**( ws1() ("\n\r" / "\r\n" / "\n" / "\r") ws()) ws() "]" {s}
+		rule loaded_file(run_on: String) -> Script
+			= name:ident() ws1() comment()? {Script{run_on, path: name}}
+
+		rule ident() -> String
+			= a:$quiet!{['a'..='z' | 'A'..='Z' | '0'..='9' | '/' | '_' | '.' | '-' ]+}  {a.to_string()}
+
+
+		pub rule rson() -> ModPure
+			= (ws() comment())* ws() files:when_scripts() ** (ws() (comment() ws() )*) ws() (comment() ws())* {
+				let flat_files = files.into_iter().flatten().collect();
+				ModPure {
+                    load_priority: 0, //TODO: Implement load priority
+                    name: rsonname.to_string(),
+                    scripts: flat_files,
+                }
+			}
+
+    }
+}
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +100,36 @@ pub fn load_mods(path: PathBuf) -> Result<Vec<Mod>, String>{
     return Ok(mods)
 }
 
+pub fn load_rson(path: PathBuf) -> Result<Mod, String>{
+    //For now im just going to assume this is scripts.rson
+    //If you want to write your own rsons errrrrr please dont 
+    let rson_file = path.join("scripts.rson");
+    if !rson_file.exists() {
+        return Err(format!("RSON file not found: {:?}", rson_file));
+    }
+    let text = read_to_string(&rson_file).map_err(|e| format!("Why no read :( {}", e))?;
+    let mod_pure = rson::rson(&text, &path.file_name().unwrap().to_string_lossy().to_string()).map_err(|e| format!("Failed to parse RSON: {}", e))?;
+    let mut scripts = Vec::new();
+    let scriptpath = path.join("mod/scripts/vscripts");
+    scripts.extend(mod_pure.scripts.iter().map(|x| {
+        let scriptpath = scriptpath.join(&x.path);
+        let name = scriptpath.file_name().unwrap_or_default().to_string_lossy().to_string();//ew, gross
+        FileInfo::new(
+            name,
+            scriptpath,
+            x.run_on.clone(),
+            FileType::RSquirrel,
+        )
+    }).collect::<Vec<_>>());
+    
+    let mod_full = Mod{
+        name: mod_pure.name,
+        scripts,
+        load_priority: mod_pure.load_priority,
+        path: path,
+    };
+    Ok(mod_full)
+}
 
 pub fn load_mod(path: PathBuf) -> Result<Mod, String>{
 

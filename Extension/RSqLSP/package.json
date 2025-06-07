@@ -26,9 +26,9 @@
       "title": "Example configuration",
       "properties": {
         "SquirrelLSP.VanillaScripts": {
-          "type": "string",
-          "default": "https://github.com/Syampuuh/Titanfall2/blob/master/scripts/vscripts/",
-          "description": "Unimplemented"
+          "type": "array",
+          "default": [],
+          "description": "Vanilla scripts directory"
         },
         "SquirrelLSP.maxNumberOfProblems": {
           "scope": "resource",

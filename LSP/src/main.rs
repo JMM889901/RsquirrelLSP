@@ -34,7 +34,7 @@ use TokenIdentifier::{GlobalSearchStep, Globals};
 
 #[tokio::main]
 async fn main() {
-    
+        
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
