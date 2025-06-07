@@ -4,6 +4,7 @@ use super::*;
 use common::{FileInfo, FileType};
 use serde::{Deserialize, Serialize};
 
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModPure{
     #[serde(rename = "LoadPriority")]

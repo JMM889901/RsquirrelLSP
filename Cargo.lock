@@ -116,6 +116,7 @@ dependencies = [
  "analysis_runner",
  "common",
  "json-spanned-value",
+ "peg",
  "serde",
  "serde_json",
 ]
@@ -886,15 +887,6 @@ checksum = "93411e420bcd1a75ddd1dc3caf18c23155eda2c090631a85af21ba19e97093b5"
 dependencies = [
  "smallvec",
  "str_indices",
-]
-
-[[package]]
-name = "rson_parse"
-version = "0.1.0"
-dependencies = [
- "peg",
- "serde",
- "serde_json",
 ]
 
 [[package]]
