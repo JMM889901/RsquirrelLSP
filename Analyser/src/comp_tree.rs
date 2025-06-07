@@ -1,6 +1,12 @@
+use core::panic;
 use std::fmt::Debug;
 
 use super::*;
+
+
+pub trait DowncastableData : DowncastSync{}
+impl_downcast!(sync DowncastableData);
+
 //Comp tree is effectively a successor to the dependency tree from load_order.rs, its basically the same thing but that was not build to be used as a generic thingy
 
 //Unlike a dependency tree, this is not a list of files we require, it is the list of variants which can be be active whenever this one is 
@@ -14,9 +20,67 @@ pub enum VariantData<T> {
     NonePreserving(FileInfo, CompiledState),//Where practical its probably worth storing this
     None,
 }
+impl<T: AnalysisResultInternal> DowncastableData for VariantData<Arc<T>>{}
+
+impl<T: Clone> Clone for VariantData<T> {
+    fn clone(&self) -> Self {
+        match self {
+            VariantData::Multi(vec) => VariantData::Multi(vec.clone()),
+            VariantData::Possible(vec, bad) => VariantData::Possible(vec.clone(), bad.clone()),
+            VariantData::Single(v, data) => VariantData::Single(v.clone(), data.clone()),
+            VariantData::NonePreserving(id, state) => VariantData::NonePreserving(id.clone(), state.clone()),
+            VariantData::None => VariantData::None,
+        }
+    }
+}
+impl VariantData<Arc<dyn AnalysisResultInternal>> {//This makes me feel so safe and not at all in grave danger
+    pub fn into_cast<T: AnalysisResultInternal + 'static>(self) -> VariantData<Arc<T>> {
+        match self {
+            VariantData::NonePreserving(id, state) => return VariantData::NonePreserving(id, state),
+            VariantData::None => return VariantData::None,
+            VariantData::Single(v, data) => return VariantData::Single(v, data.downcast_arc::<T>().expect("wuh")),
+            _ => ()
+        }
+        let mut new_bad = None;;
+        let vec = match self {
+            VariantData::Multi(vec) => vec,
+            VariantData::Possible(vec, bad) => {new_bad = Some(bad); vec},
+            _ => panic!("oof"),
+        };
+        let ptr = vec.as_ptr() as *const (SQDistinctVariant, Arc<dyn AnalysisResultInternal>);
+        let len = vec.len();
+        let capacity = vec.capacity();
+        std::mem::forget(vec); // Prevent Vec from being dropped
+        let new_vec = unsafe { Vec::from_raw_parts(ptr as *mut (SQDistinctVariant, Arc<T>), len, capacity) };
+        match new_bad {
+            None => VariantData::Multi(new_vec),
+            Some(new_bad) => VariantData::Possible(new_vec, new_bad),
+            _ => panic!(":("),
+        }
+    }
+
+        pub fn downcast<T: AnalysisResultInternal + 'static>(&self) -> VariantData<Arc<T>> {
+        match self {
+            VariantData::Multi(vec) => VariantData::Multi(unsafe { Vec::from_raw_parts(vec.as_ptr() as *mut _, vec.len(), vec.capacity()) }),
+            VariantData::Possible(vec, bad) => VariantData::Possible(unsafe { Vec::from_raw_parts(vec.as_ptr() as *mut _, vec.len(), vec.capacity()) }, bad.clone()),
+            VariantData::Single(v, data) => VariantData::Single(v.clone(), data.clone().downcast_arc::<T>().expect("wuh")),
+            VariantData::NonePreserving(id, state) => VariantData::NonePreserving(id.clone(), state.clone()),
+            VariantData::None => VariantData::None,
+        }
+    }
+}
 //TODO: I really need to make a better compiledstate representation, at the point it is created i absolutely do know all of the possible conditions, so i should 
 //probably just store them as an int or smth instead of strings
 impl<T> VariantData<T> {
+    pub fn get_first_file(&self) -> Option<&FileInfo> {
+        match self {
+            VariantData::Multi(vec) => vec.first().map(|(v, _)| &v.0.file),
+            VariantData::Possible(vec, _) => vec.first().map(|(v, _)| &v.0.file),
+            VariantData::Single(v, _) => Some(&v.0.file),
+            VariantData::NonePreserving(id, _) => Some(id),
+            VariantData::None => None,
+        }
+    }
     pub fn from_vec<B:HasVariantID>(vec: Vec<(SQDistinctVariant, T)>, id: &B) -> Self {
         let temp = Self::Multi(vec);
         temp.identify(id)
@@ -37,7 +101,7 @@ impl<T> VariantData<T> {
         match self {
             VariantData::Multi(vec) => VariantData::Multi(vec.into_iter().filter_map(|(v, data)| f(v, data).map(|d| (v.clone(), d))).collect()),
             VariantData::Possible(vec, bad) => VariantData::Possible(vec.into_iter().filter_map(|(v, data)| f(v, data).map(|d| (v.clone(), d))).collect(), bad.clone()),
-            VariantData::Single(v, data) => f(v, data).map_or(VariantData::Multi(vec![]), |d| VariantData::Single(v.clone(), d)),
+            VariantData::Single(v, data) => f(v, data).map_or(VariantData::None, |d| VariantData::Single(v.clone(), d)),
             VariantData::NonePreserving(id, state) => VariantData::NonePreserving(id.clone(), state.clone()),
             VariantData::None => VariantData::None,
         }

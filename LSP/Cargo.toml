@@ -3,6 +3,9 @@ name = "LSP"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+timed = ["ASTAnalyser/timed", "common/timed", "analysis_runner/timed"]
+
 [dependencies]
 tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread", "io-std"] }
 tower-lsp = "0.20.0"

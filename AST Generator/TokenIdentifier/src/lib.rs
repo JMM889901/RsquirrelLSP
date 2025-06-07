@@ -31,10 +31,7 @@ impl AnalysisResult for Globals{}
 impl Globals{
     //At this point globals can be read but not really written to
     pub fn get(&self, key: &String) -> Option<Arc<Variable>>{
-        if let Some(var) = self.globals.index(key){
-            return Some(var.clone());
-        }
-        return None;
+        return self.globals.index(key);
     }
 }
 

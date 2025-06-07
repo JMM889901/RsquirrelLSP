@@ -12,7 +12,8 @@ use std::time::Duration;
 use analysis_common::spanning_search::SpanningSearch;
 use analysis_common::variable::{Variable, VariableExternal};
 use analysis_runner::comp_tree::VariantData;
-use analysis_runner::{Analyser, AnalyserSettings, AnalysisError, AnalysisResultInternal, AnalysisStage, HasVariantID, PreserveType, SQDistinctVariant, VariantID};
+use analysis_runner::state_resolver::CompiledState;
+use analysis_runner::{Analyser, AnalyserSettings, AnalysisError, AnalysisResultInternal, AnalysisStage, CacheTrees, HasVariantID, PrebuildTrees, PreserveType, SQDistinctVariant};
 use rayon::iter::IntoParallelIterator;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::request::{GotoDeclarationParams, GotoDeclarationResponse, References};
@@ -144,12 +145,14 @@ impl Backend{
         let mut clean_time: Duration = Duration::from_secs(0);
         let mut preproc_time: Duration = Duration::from_secs(0);
         let mut analysis_duration: Duration = Duration::from_secs(0);
+        #[cfg(feature = "timed")]
+        let mut time_events = HashMap::new();
 
         let parse_start = std::time::Instant::now();
         let diags = { //Do this just to make it stop complaining about awaits, i know it sucks
         let mut analyser = self.last_analysis.write().unwrap();
         if analyser.is_none() || update {
-            let mut new_analyser = Analyser::new_settings(AnalyserSettings{prebuild_trees: analysis_runner::PrebuildTrees::Always});
+            let mut new_analyser = Analyser::new_settings(AnalyserSettings{prebuild_trees: PrebuildTrees::Always, cache_trees: CacheTrees::Always, ..Default::default()});
             new_analyser.add_step::<ASTParseResult>(Box::new(ASTParseStep{}), PreserveType::Unchanged, AnalysisStage::Parse);
             new_analyser.add_step::<Globals>(Box::new(GlobalSearchStep{}), PreserveType::Unchanged, AnalysisStage::GlobalIdent);
             new_analyser.add_step::<ReferenceAnalysisResult>(Box::new(ReferenceAnalysisStep{}), PreserveType::Never, AnalysisStage::FunctionIdent);
@@ -186,18 +189,20 @@ impl Backend{
             let file = x.clone();
             if (&FileType::External == file.ftype() || file.ftype() == &FileType::NativeFuncs) {//This is ass
                 let externals = find_externals_varaints(&file);
-                let mut map: HashMap<VariantID, Arc<dyn AnalysisResultInternal>> = HashMap::new();
+                let mut map: Vec<(CompiledState, Arc<dyn AnalysisResultInternal>)> = Vec::new();
                 let externals = externals.into_iter().map(|external| {
                     let sq_variant = SQDistinctVariant::new(
                         file.clone(),
                         external.0.clone().into(),
                         "".to_string() //TODO: ew, treating these as regular files was a mistake
                     );
-                    let id = sq_variant.get_id();
-                    map.insert(id, Arc::new(external.1));
+                    let id = sq_variant.get_state();;
+                    map.push((id.clone(), Arc::new(external.1)));
                     return sq_variant;
                 }).collect::<Vec<_>>();
-                analyser.push_results(map);
+                let mut result = HashMap::new();
+                result.insert(file.clone(), map);
+                analyser.push_results(result);
                 return (file, externals);
             }
             let variants = get_file_varaints(file.clone());
@@ -219,8 +224,14 @@ impl Backend{
 
         let analysis_start = std::time::Instant::now();
         analyser.run_steps();
+
         analysis_duration = analysis_start.elapsed();
-        let mut all_diags = analyser.variants.iter().map(|(file, variants)|{
+                #[cfg(feature = "timed")]
+        {
+        time_events = analyser.arbitrary_times.read().unwrap().clone();
+        }
+
+        let all_diags = analyser.variants.iter().map(|(file, variants)|{
             let mut errors = Vec::new();
             for variant in variants {
                 errors.extend(analyser.get_errors(variant));
@@ -242,6 +253,7 @@ impl Backend{
             }
             return (file.clone(), diags);
         }).collect::<Vec<_>>();
+
         all_diags
         };
         let parse_duration = parse_start.elapsed();
@@ -254,6 +266,10 @@ impl Backend{
         self.client.log_message(MessageType::INFO, format!("Parsed files: {:?} in {:?}, reported diagnostics in {:?}, analysis took {:?}", files.len(), parse_duration, report_duration, analysis_duration)).await;
         self.client.log_message(MessageType::INFO, format!("Cleaned files in {:?}, preprocessed in {:?}", clean_time, preproc_time)).await;
         self.client.log_message(MessageType::INFO, format!("Did create new analyser: {}", did_new_analyser)).await;
+        #[cfg(feature = "timed")]
+        {
+            self.client.log_message(MessageType::INFO, format!("Time events: {:?}", time_events)).await;
+        }
         return true;
     }
 

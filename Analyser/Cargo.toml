@@ -8,6 +8,8 @@ edition = "2021"
 name = "analysis_runner"
 path = "src/lib.rs" 
 
+[features]
+timed = ["common/timed"]
 
 [dependencies]
 ConfigPredictor = { path = "../Preprocessor/ConfigPredictor" }

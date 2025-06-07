@@ -1,16 +1,16 @@
 //Man literally every time i think i have an idea to simplify things i come up with something like this lmao
 //Thank god nobody but me will read this code
-use std::{any::{Any, TypeId}, collections::HashMap, fmt::{Debug, Display, Pointer}, fs::File, hash::{BuildHasher, DefaultHasher, Hasher}, path::PathBuf, sync::{Arc, RwLock}};
+use std::{any::{type_name, Any, TypeId}, collections::HashMap, fmt::{Debug, Display, Formatter, Pointer}, fs::File, hash::{BuildHasher, DefaultHasher, Hasher}, path::PathBuf, sync::{Arc, RwLock}};
 
 use common::{FileInfo, FileType};
-use downcast_rs::{impl_downcast, DowncastSync};
+use downcast_rs::{impl_downcast, Downcast, DowncastSync};
 use indexmap::IndexMap;
-use rayon::{iter::IntoParallelIterator, vec};
+use rayon::{iter::IntoParallelIterator, result, vec};
 use serde::de;
 use rayon::prelude::*;
 use ConfigPredictor::state::SqCompilerState;
 
-use crate::{comp_tree::{for_file, VariantData}, state_resolver::CompiledState};
+use crate::{comp_tree::{for_file, DowncastableData, VariantData}, state_resolver::CompiledState};
 
 pub mod state_resolver;
 pub mod comp_tree;
@@ -67,6 +67,27 @@ pub enum PrebuildTrees{
     Always,//I might add future options for doing this on some things
     Never,//Oh boy that was an awful idea, im not even going to have this here, its always, fight me
 }
+impl PrebuildTrees{
+    pub fn prebuild(&self) -> bool {
+        match self {
+            PrebuildTrees::Always => true,
+            PrebuildTrees::Never => false,
+        }
+    }
+
+}
+pub enum CacheTrees{
+    Always,
+    Never
+}
+impl CacheTrees{
+    pub fn cache(&self) -> bool {
+        match self {
+            CacheTrees::Always => true,
+            CacheTrees::Never => false,
+        }
+    }
+}
 //I wont lie i just wanted to do docstring because it seemed novel, theres no reason for the below to be the only thing with docstring
 
 /// The degree to which results can be preserved from one run to another
@@ -96,33 +117,9 @@ use std::hash::Hash;
 pub trait HasVariantID {
     fn get_state(&self) -> &CompiledState;
     fn get_file(&self) -> &FileInfo;
-    fn get_id(&self) -> VariantID{
-        let mut state_hasher = DefaultHasher::new();
-        let mut file_hasher = DefaultHasher::new();
-        let state = self.get_state();
-        let file = self.get_file();
-        state.hash(&mut state_hasher);
-        file.path().hash(&mut file_hasher);
-        return VariantID::new(state_hasher.finish(), file_hasher.finish());
-    }
+
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VariantID{
-    pub state: u64,
-    pub file: u64,
-}
-impl VariantID {
-    pub fn new(state: u64, file: u64) -> Self {
-        VariantID { state, file }
-    }
-    pub fn from(state: CompiledState, file: &FileInfo) -> Self {
-        let mut state_hasher = DefaultHasher::new();
-        let mut file_hasher = DefaultHasher::new();
-        state.hash(&mut state_hasher);
-        file.path().hash(&mut file_hasher);
-        VariantID::new(state_hasher.finish(), file_hasher.finish())
-    }
-}
+
 
 #[derive(PartialEq, Eq, Hash)]
 pub struct SQDistinctVariantInternal {
@@ -153,14 +150,25 @@ impl SQDistinctVariant {
     pub fn text(&self) -> &String {
         &self.0.text
     }
+    pub fn get_state_id(&self) -> u64 {
+        let mut state_hasher = DefaultHasher::new();
+        self.0.state.hash(&mut state_hasher);
+        return state_hasher.finish();
+    }
 }
 
 pub struct AnalyserSettings {
-    pub prebuild_trees: PrebuildTrees
+    pub prebuild_trees: PrebuildTrees,
+    pub cache_trees: CacheTrees,
 }
 impl AnalyserSettings{
     pub fn new() -> Self {
-        return Self { prebuild_trees: PrebuildTrees::Never }
+        return Self::default()
+    }
+}
+impl Default for AnalyserSettings {
+    fn default() -> Self {
+        return Self { prebuild_trees: PrebuildTrees::Never, cache_trees: CacheTrees::Never };
     }
 }
 #[derive(Debug, Clone)]
@@ -180,6 +188,12 @@ impl Display for AnalysisError {
         }
     }
 }
+#[cfg(feature = "timed")]
+#[derive(Debug, Clone)]
+pub struct EventTimeInfo{
+    pub duration: std::time::Duration,
+    pub occured: usize
+}
 
 pub struct Analyser {
     pub settings: AnalyserSettings,
@@ -187,8 +201,12 @@ pub struct Analyser {
     pub steps: IndexMap<AnalysisStage, Vec<StepInfo>>,//These are seperate since this is ordered
     pub steps_data: HashMap<TypeId, RwLock<AnalysisStepResults>>,
     pub prebuilt_trees: HashMap<CompiledState, Vec<(FileInfo, VariantData<()>)>>,//I could build this per-varaint but like 90% of those would be duplicates anyways
+    pub cached_trees: RwLock<HashMap<TypeId, HashMap<CompiledState, Vec<(FileInfo, Arc<dyn DowncastableData>)>>>>, //TODO: This is a bit of a hack, but it works for now
     ///Analysis-wide errors, typically missing steps/results
     pub overall_errors: RwLock<Vec<AnalysisError>>,
+    #[cfg(feature = "timed")]
+    pub arbitrary_times: RwLock<HashMap<String, EventTimeInfo>>, 
+    
 }
 impl Debug for Analyser {//This is only really here because something later derives debug
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -200,21 +218,29 @@ impl Debug for Analyser {//This is only really here because something later deri
     }
 }
 impl Analyser {
-    pub fn new() -> Self {
-        let mut map = IndexMap::new();
-        map.insert(AnalysisStage::Parse, Vec::new());
-        map.insert(AnalysisStage::GlobalIdent, Vec::new());
-        map.insert(AnalysisStage::GlobalAnalysis, Vec::new());
-        map.insert(AnalysisStage::FunctionIdent, Vec::new());
-        map.insert(AnalysisStage::FunctionAnalysis, Vec::new());
-        Analyser {
-            settings: AnalyserSettings::new(),
-            variants: Vec::new(),
-            steps: map,
-            prebuilt_trees: HashMap::new(),
-            steps_data: HashMap::new(),
-            overall_errors: RwLock::new(Vec::new()),
+    #[cfg(feature = "timed")]//This does a lot of locks so slows things down quite a bit
+    pub fn record_time(&self, name: String, duration: std::time::Duration) {
+        let mut times = self.arbitrary_times.write().unwrap();
+        if let Some(event) = times.get_mut(&name) {
+            event.duration += duration;
+            event.occured += 1;
+        } else {
+            times.insert(name, EventTimeInfo { duration, occured: 1 });
         }
+    }
+        #[cfg(feature = "timed")]//This does a lot of locks so slows things down quite a bit
+    pub fn record_time_direct(&self, name: String, data: EventTimeInfo) {
+        let mut times = self.arbitrary_times.write().unwrap();
+        if let Some(event) = times.get_mut(&name) {
+            event.duration += data.duration;
+            event.occured += data.occured;
+        } else {
+            times.insert(name, data);
+        }
+    }
+    pub fn new() -> Self {
+        let settings = AnalyserSettings::new();
+        Analyser::new_settings(settings)
     }
     pub fn new_settings(settings: AnalyserSettings) -> Self {
         let mut map = IndexMap::new();
@@ -228,20 +254,39 @@ impl Analyser {
             variants: Vec::new(),
             steps: map,
             prebuilt_trees: HashMap::new(),
+            cached_trees: RwLock::new(HashMap::new()),
             steps_data: HashMap::new(),
             overall_errors: RwLock::new(Vec::new()),
+            #[cfg(feature = "timed")]
+            arbitrary_times: RwLock::new(HashMap::new()),
         }
     }
     pub fn clean_all(&mut self) {
         self.steps_data.clear();
     }
     pub fn parralel_clean_single(&mut self, changed_files: &FileInfo, index: usize) {//This vec should be deduped, i will just trust that you do that
-    
+        //For simplicity sake just clean all prebuilt trees
+        #[cfg(feature = "timed")]
+        let start = std::time::Instant::now();
+        self.prebuilt_trees.clear();
+        self.cached_trees.write().unwrap().clear();
+        #[cfg(feature = "timed")]
+        self.record_time("Prebuilt/cached tree clear".to_string(), start.elapsed());
         for step in self.steps.values().flatten() {
+            #[cfg(feature = "timed")]
             let start = std::time::Instant::now();
             if matches!(step.preserve, PreserveType::Never) {
-                let new_results = AnalysisStepResults::new();
-                self.steps_data.insert(step.return_type, RwLock::new(new_results));
+                //let new_results = AnalysisStepResults::new();
+                //self.steps_data.insert(step.return_type, RwLock::new(new_results)); //Cleaning step ASTAnalyser::ReferenceAnalysisStep": EventTimeInfo { duration: 19.509ms, occured: 1 }
+                {
+                let write = self.steps_data.get_mut(&step.return_type).unwrap();
+                let mut write = write.write().unwrap();
+                write.results.par_drain().count();//"Cleaning step ASTAnalyser::ReferenceAnalysisStep": EventTimeInfo { duration: 5.5542ms, occured: 1 }
+                }
+                #[cfg(feature = "timed")]
+                {
+                self.record_time(format!("Cleaning step {}", step.step_name), start.elapsed());
+                }
                 continue;
             }
             let data = self.steps_data.get(&step.return_type);
@@ -264,14 +309,13 @@ impl Analyser {
                 if should_clean {
                     return None;
                 }
-                let mut hasher = DefaultHasher::new();
-                file_info.path().hash(&mut hasher);
-                let file_hash = hasher.finish();
+
                // return (file_hash, variants).into();
-                return data.get_key_value(&file_hash)
+                return data.get_key_value(file_info)
             }).map(|(x, y)| (x.clone(), y.clone())).collect::<HashMap<_, _>>();
             results.results = remain;
-
+            #[cfg(feature = "timed")]
+            self.record_time(format!("Cleaning step {}", step.step_name), start.elapsed());
         };
 
     }
@@ -340,9 +384,9 @@ impl Analyser {
                         return None;
                     }
                     let for_file = variants.into_par_iter().map(|variant| {
-                        (variant.get_id().state, self.run_step(&step.step, &variant))//TODO: Scary clone! (Not really, but i dont like cloning a bunch of strings)
-                    }).collect::<HashMap<u64, _>>();
-                    Some((file_info.id(), for_file))
+                        (variant.get_state().clone(), self.run_step(&step.step, &variant))//TODO: Scary clone! (Not really, but i dont like cloning a bunch of strings)
+                    }).collect::<Vec<(CompiledState, _)>>();
+                    Some((file_info.clone(), for_file))
                 });//.collect::<HashMap<_, _>>();
                 //self.push_results(res);
 
@@ -357,7 +401,7 @@ impl Analyser {
             //Register overall step errors
             errs.extend(results.errors.read().unwrap().clone());
             //Register errors for the actual run
-            let errors = results.get(&variant.get_id());
+            let errors = results.get(variant);
             if let Some(errors) = errors{
                //let errors = errors.as_ref().downcast_ref::<dyn AnalysisResultInternal>().unwrap();
                let errors = errors.errors(variant);
@@ -370,8 +414,8 @@ impl Analyser {
         }
         return errs;
     }
-    pub fn push_results(&self, results: HashMap<VariantID, Arc<dyn AnalysisResultInternal>> ) {
-        let type_id = results.values().next().unwrap().as_ref().type_id();//Jesus 
+    pub fn push_results(&self, results: HashMap<FileInfo, Vec<(CompiledState, Arc<dyn AnalysisResultInternal>)>> ) {
+        let type_id = results.values().next().unwrap().first().unwrap().1.as_ref().type_id();//Jesus
         let current = self.steps_data.get(&type_id);
         let step_results = match current {
             Some(results) => results,
@@ -384,8 +428,10 @@ impl Analyser {
             }
         };
         let mut old_results = step_results.write().unwrap();
-        for (variant, result) in results {
-            old_results.insert(&variant, result);
+        for (file, results) in results {
+            for (state, result) in results {
+                old_results.insert_filestate(file.clone(), state, result);
+            }
         }
     }
 
@@ -416,14 +462,14 @@ impl Analyser {
             }
         };
         let mut results = step_results.write().unwrap();
-        results.insert(&variant.get_id(), result);
+        results.insert(variant, result);
 
     }
     pub fn get_prior_result<T: AnalysisResultInternal + Sized + 'static, B: HasVariantID>(&self, variant: &B) -> Option<Arc<T>> {
         let type_id = TypeId::of::<T>();
         if let Some(results) = self.steps_data.get(&type_id) {
             let results = results.read().unwrap();
-            if let Some(result) = results.get(&variant.get_id()) {
+            if let Some(result) = results.get(variant) {
                 let as_t = result.clone();
                 let as_t = as_t.downcast_arc::<T>().ok();
                 return as_t;
@@ -436,15 +482,45 @@ impl Analyser {
 
     //This function should not be used raw, at least not during a step. I am specifically trying to abstract away the preprocessor for those
     pub fn get_results<T: AnalysisResultInternal + Sized + 'static, B: HasVariantID>(&self, from: &B, which: FileFilter, resolve: bool) -> Result<VariantData<Arc<T>>, AnalysisError> {
-        match self.settings.prebuild_trees {
-            PrebuildTrees::Never => {
-                return self.get_results_notree(from, which, resolve);
-            },
-            PrebuildTrees::Always => {
-                return self.get_results_withtree(from, which, resolve);
-            }
-            _ => todo!(),
+        if self.settings.cache_trees.cache(){
+            return self.get_cached_results::<T, B>(from, which, resolve);
         }
+
+        if self.settings.prebuild_trees.prebuild() {
+                return self.get_results_withtree(from, which, resolve);
+        } else {
+                return self.get_results_notree(from, which, resolve);
+        }
+    }
+    pub fn get_cached_results<T: AnalysisResultInternal + Sized + 'static, B: HasVariantID>(&self, from: &B, which: FileFilter, resolve: bool) -> Result<VariantData<Arc<T>>, AnalysisError> {
+        let cached = self.cached_trees.read().unwrap();
+        let type_id = TypeId::of::<T>();
+        let state_cache = cached.get(&type_id).and_then(|state_cache| {
+            state_cache.get(&from.get_state())
+        });
+        
+        let state_cache = match state_cache {
+            None => {drop(cached);&self.cache_tree::<T, B>(from)},
+            Some(state_cache) => state_cache,
+        };
+        let state_iter: Box<dyn Iterator<Item = &(FileInfo, Arc<dyn DowncastableData>)>> = match which {
+            FileFilter::All(_) => Box::new(state_cache.iter()),
+            FileFilter::After(_) => Box::new(state_cache.iter().skip_while(|(file_info, _)| file_info.name() != from.get_file().name())),
+            FileFilter::Before(_) => Box::new(state_cache.iter().take_while(|(file_info, _)| file_info.name() != from.get_file().name())),
+            FileFilter::Target => Box::new(state_cache.iter().filter(|(file_info, _)| file_info.name() == from.get_file().name())),
+        };
+        let merged = state_iter.map(|(_, data)| {
+            data.clone().downcast_arc::<VariantData<Arc<T>>>()
+                .map_err(|_| AnalysisError::StepRequestError(format!("Cached data for step {:?} is not of type {:?}", std::any::type_name::<T>(), data.type_id())))
+                .unwrap()
+        });
+        let merged = merged.map(|data| data.as_ref().clone().get_inner()).flatten().collect::<Vec<_>>();//TODO: Bad and cringe clone :(
+        let merged = VariantData::Multi(merged);
+        //let merged = VariantData::merge_unchecked(variants);
+        if resolve {
+            return Ok(merged.identify(from));
+        }
+        return Ok(merged);
     }
     pub fn get_variant_results_filepath<T: AnalysisResultInternal + Sized + 'static>(&self, file: PathBuf) -> Result<VariantData<Arc<T>>, AnalysisError> {
         let variants = self.variants.iter().find(|(file_info, _)| file_info.path() == &file);
@@ -459,7 +535,7 @@ impl Analyser {
         let step_results = step_results.read().unwrap();
         let variants = &variants.unwrap().1;
         let data = variants.iter().map(|variant| {
-            let result = step_results.get(&variant.get_id()); 
+            let result = step_results.get(variant); 
             if result.is_none(){
                 panic!("Tried to get results for file, but variants were not found for file {:?} in step {:?}", file, std::any::type_name::<T>());
             }
@@ -473,36 +549,7 @@ impl Analyser {
         }).collect::<Vec<_>>();
         return Ok(VariantData::Multi(data))
     }
-    /// Expensive, should not be used during a step
-    pub fn get_variant_results_filepath_pure<T: AnalysisResultInternal + Sized + 'static>(&self, file: PathBuf) -> Result<HashMap<VariantID, Arc<T>>, AnalysisError> {
-        //TODO: This is bad, probably not safe
-        let mut file_hasher = DefaultHasher::new();
-        file.hash(&mut file_hasher);
-        let file_hash = file_hasher.finish();
-        let step_results = self.steps_data.get(&TypeId::of::<T>());
-        if step_results.is_none() {
-            return Err(AnalysisError::StepRequestError(format!("No results for step {:?}", std::any::type_name::<T>())));
-        }
-        let step_results = step_results.unwrap();
-        let step_results = step_results.read().unwrap();
-        let map = step_results.results.get(&file_hash);
-        if map.is_none() {
-            return Err(AnalysisError::VariantRequestError(format!("No results for file {:?} in step {:?}", file, std::any::type_name::<T>())));
-        }
-        let map = map.unwrap();
-        let mut results = HashMap::new();
-        for (state, result) in map {
-            let casted_result = result.clone().downcast_arc::<T>();
-            if let Ok(result) = casted_result.as_ref() {
-                results.insert(VariantID::new(*state, file_hash), result.clone());
-            } else{
-                let error_text = format!("Result for step {:?} is not of type {:?}", std::any::type_name::<T>(), result.type_id());
-                panic!("You need to create actual error handling :3 {:?}", error_text);
-            }
-        }
-        return Ok(results);
-    
-    }
+
     pub fn get_results_notree<T: AnalysisResultInternal + Sized + 'static, B: HasVariantID>(&self, from: &B, which: FileFilter, resolve: bool) -> Result<VariantData<Arc<T>>, AnalysisError> {
         let variants = self.steps_data.get(&TypeId::of::<T>());
         if variants.is_none() {
@@ -528,7 +575,7 @@ impl Analyser {
             if let Some(output) = for_file(variants, &from.get_state()) {
                 others.push(output.map(
                     &mut|variant, result| {
-                        let past_result = results.get(&variant.get_id());
+                        let past_result = results.get(variant);
                         if (past_result.is_none()) {
                             let error_text = format!("No results of step {:?} for variant {:?} in file {:?}",std::any::type_name::<T>(), variant, file_info.name());
                             //results_for_file.errors.push(AnalysisError::VariantRequestError(error_text));
@@ -553,6 +600,71 @@ impl Analyser {
         
         return Ok(new);
     }
+    pub fn cache_tree<T: AnalysisResultInternal + Sized + 'static, B: HasVariantID>(&self, from: &B) ->  Vec<(FileInfo, Arc<dyn DowncastableData>)> {
+        let type_id = TypeId::of::<T>();
+        let results = self.steps_data.get(&type_id);
+        if results.is_none() {
+            panic!("Tried to cache tree for step {:?} but no results were found", std::any::type_name::<T>());
+        }
+        let results = results.unwrap();
+        let results = results.read().unwrap();
+        let to_cache: Vec<(FileInfo, Arc<dyn DowncastableData>)>;
+        if self.settings.prebuild_trees.prebuild(){
+            let files_iter = self.prebuilt_trees.get(from.get_state()).unwrap().iter();
+            to_cache = files_iter.map(|(file_info, variants)| {
+                let result = variants.filter_map(
+                    &mut|variant, _| {
+                        let past_result = results.get(variant);
+                        if past_result.is_none() {
+                            let error_text = format!("No results of step {:?} for variant {:?} in file {:?}",std::any::type_name::<T>(), variant, file_info.name());
+                            panic!("boo womp");
+                        } 
+                        let past_result = past_result.unwrap();
+                        let downcasted = past_result.clone().downcast_arc::<T>().unwrap();
+                        return Some(downcasted);
+                    }
+                );
+                (file_info.clone(), Arc::new(result) as Arc<dyn DowncastableData>)
+            }).collect::<Vec<_>>();
+        } else {
+            let files_iter = self.variants.iter().filter_map(|(file, details)| {
+                let data = for_file(details, &from.get_state());
+                if data.is_none() {
+                    return None;
+                }
+                let data = data.unwrap();
+                Some((file.clone(), data))
+            });
+
+            to_cache = files_iter.map(|(file_info, variants)| {
+            let result = variants.filter_map(
+                &mut|variant, _| {
+                    let past_result = results.get(variant);
+                    if past_result.is_none() {
+                        let error_text = format!("No results of step {:?} for variant {:?} in file {:?}",std::any::type_name::<T>(), variant, file_info.name());
+                        panic!("boo womp");
+                    } 
+                    let past_result = past_result.unwrap();
+                    let downcasted = past_result.clone().downcast_arc::<T>().unwrap();
+                    return Some(downcasted);
+                }
+            );
+            (file_info.clone(), Arc::new(result) as Arc<dyn DowncastableData>)
+            }).collect::<Vec<_>>();
+        }
+
+        
+
+        let mut cache = self.cached_trees.write().unwrap();
+        let state = from.get_state().clone();
+        let type_id = TypeId::of::<T>();
+        if !cache.contains_key(&type_id) {
+            cache.insert(type_id, HashMap::new());
+        }
+        let state_cache = cache.get_mut(&type_id).unwrap();
+        state_cache.insert(state.clone(), to_cache);
+        return state_cache.get(&state).unwrap().clone();
+    }
     //I don't really have the words for this honestly
 
 
@@ -573,36 +685,70 @@ impl Analyser {
             FileFilter::After(_) => Box::new(variants.iter().skip_while(|(file_info, _)| file_info.name() != from.get_file().name())),
             FileFilter::Before(_) => Box::new(variants.iter().take_while(|(file_info, _)| file_info.name() != from.get_file().name())),
             FileFilter::Target => Box::new(variants.iter().filter(|(file_info, _)| file_info.name() == from.get_file().name())),
-            _ => todo!()
         };
-        let mut others = Vec::new();
+        //let mut others = Vec::new();
+        let mut new = Vec::new();
+        #[cfg(feature = "timed")]
+        let start = std::time::Instant::now();
+        #[cfg(feature = "timed")]
+        let mut mapping = EventTimeInfo {
+            duration: std::time::Duration::ZERO,
+            occured: 0
+        };
+        #[cfg(feature = "timed")]
+        let mut collecting = EventTimeInfo {
+            duration: std::time::Duration::ZERO,
+            occured: 0
+        };
         for (file_info, variants) in files_iter {
             if !which.should_search(file_info.ftype()) {
                 continue;
             }
+            #[cfg(feature = "timed")]
+            let start = std::time::Instant::now();
+            //let file_results = results.results.get(file_info).unwrap();//TODO: Scary?
             let result = variants.filter_map(
                 &mut|variant, _| {
-                    let past_result = results.get(&variant.get_id());
-                    if (past_result.is_none()) {
+                    //let past_result = file_results.iter().find(|(state, thing)| state == variant.get_state());
+                    let past_result = results.get(variant);
+                    if past_result.is_none() {
                         let error_text = format!("No results of step {:?} for variant {:?} in file {:?}",std::any::type_name::<T>(), variant, file_info.name());
                         panic!("boo womp");
                     } 
                     let past_result = past_result.unwrap();
                     let casted_result = past_result.clone().downcast_arc::<T>();
-                    if casted_result.is_err() {
-                        let error_text = format!("Result for step {:?} is not of type {:?}", std::any::type_name::<T>(), past_result.type_id());
-                        panic!("You need to create actual error handling :3 {:?}", error_text);
-                    }
                     //let casted_result = casted_result.unwrap();
                     if let Ok(casted_result) = casted_result{
                         return Some(casted_result);
                     }
-                    None
+                    let error_text = format!("Result for step {:?} is not of type {:?}", std::any::type_name::<T>(), past_result.type_id());
+                    panic!("You need to create actual error handling :3 {:?}", error_text);
                 }
             );
-            others.push(result);
+            #[cfg(feature = "timed")]
+            {
+            mapping.duration += start.elapsed();
+            mapping.occured += 1;
+            }
+            //let result = result.collect::<Vec<_>>();
+            #[cfg(feature = "timed")]
+            let start = std::time::Instant::now();
+            new.extend(result.get_inner());
+            #[cfg(feature = "timed")]
+            {
+            collecting.duration += start.elapsed();
+            collecting.occured += 1;
+            }
+            //others.push(result);
         }
-        let new = VariantData::merge_unchecked(others);
+        #[cfg(feature = "timed")]
+        {
+        self.record_time(format!("Building tree from prebuilt-tree: {}", std::any::type_name::<T>()), start.elapsed());
+        self.record_time_direct(format!("Mapping prebuilt-tree: {}", std::any::type_name::<T>()), mapping);
+        self.record_time_direct(format!("Collecting prebuilt-tree: {}", std::any::type_name::<T>()), collecting);
+        }
+        //let new = VariantData::merge_unchecked(others);
+        let new = VariantData::Multi(new);
         if resolve {
             return Ok(new.identify(from));
         }
@@ -618,19 +764,23 @@ impl Analyser {
         //As in, the query to get a global function adds 85ms to an otherwise 3ms step (although it queries multiple times) <- down to 30ms, but it was around 15 before switching to this model
         //Difference being this grabs the entire pre-built tree (or builds a new one) and filters it, previously it gradually added files until it got a complete context. 
         //I dont really like doing this for the time loss, but technically the old way had a much worse worst-case time
-        let mut step_duration = HashMap::new();
+        #[cfg(feature = "timed")]
         let start = std::time::Instant::now();
         let from_step = self.get_results(from, which, false)?;
-        step_duration.insert("Grab tree", start.elapsed());
+        #[cfg(feature = "timed")]
+        self.record_time(format!("Querying: {} (Get Tree)", std::any::type_name::<T>()), start.elapsed());
+        #[cfg(feature = "timed")]
         let start = std::time::Instant::now();
         let others = from_step.filter_map(f);
-        step_duration.insert("Filter tree", start.elapsed());
+        #[cfg(feature = "timed")]
+        self.record_time(format!("Querying: {} (filter)", std::any::type_name::<T>()), start.elapsed());
+        #[cfg(feature = "timed")]
         let start = std::time::Instant::now();
         let others = others.identify(from);
-        step_duration.insert("Identify", start.elapsed());
+        #[cfg(feature = "timed")]
+        self.record_time(format!("Querying: {} (identify)", std::any::type_name::<T>()), start.elapsed());
         //let others = others.collect::<Vec<_>>();
 
-        println!("Step durations: {:?}", step_duration);
         return Ok(others)
     }
     //TODO: Nicer error handling (maybe with proper position stuff, but really i should leave that to steps themselves) 
@@ -638,7 +788,7 @@ impl Analyser {
 
 pub struct AnalysisStepResults {//God, this is gross
     //pub results: HashMap<VariantID, Arc<dyn AnalysisResultInternal>>,
-    pub results: HashMap<u64, HashMap<u64, Arc<dyn AnalysisResultInternal>>>,
+    pub results: HashMap<FileInfo, Vec<(CompiledState, Arc<dyn AnalysisResultInternal>)>>,//This is something of a test, it used to be a HashMap<HashMap> but theres only 2-3 variants per file so this should be faster?
     //Why on gods green earth did i not just say fuck it and use an enum
     ///Represents step-wide errors that (ideally) are not associated with a given file/variants
     pub errors: RwLock<Vec<AnalysisError>>
@@ -650,24 +800,34 @@ impl AnalysisStepResults {
             errors: RwLock::new(Vec::new()),
         }
     }
-    fn get(&self, key: &VariantID) -> Option<&Arc<dyn AnalysisResultInternal>> {
-        self.results.get(&key.file).and_then(|x| x.get(&key.state))
+    fn get(&self, key: &dyn HasVariantID) -> Option<&Arc<dyn AnalysisResultInternal>> {
+        self.results.get(&key.get_file()).and_then(|x| x.iter().find(|(x, y)| x == key.get_state()).map(|(x, y)| y))
     }
-    fn insert(&mut self, key: &VariantID, value: Arc<dyn AnalysisResultInternal>) {
-        let mut inner = self.results.entry(key.file).or_insert(HashMap::new());
-        inner.insert(key.state, value);
+    fn insert(&mut self, key: &dyn HasVariantID, value: Arc<dyn AnalysisResultInternal>) {
+        let file = key.get_file().clone();
+        let inner = self.results.entry(file).or_insert(Vec::new());
+        inner.push((key.get_state().clone(), value));
+    }
+    fn insert_filestate(&mut self, file: FileInfo, state: CompiledState, value: Arc<dyn AnalysisResultInternal>){
+        let inner = self.results.entry(file).or_insert(Vec::new());
+        inner.push((state, value));
     }
     fn has_file(&self, file: &FileInfo) -> bool {
-        let mut hasher = DefaultHasher::new();
-        file.path().hash(&mut hasher);
-        let id = hasher.finish();
-        return self.results.contains_key(&id)
+
+        return self.results.contains_key(file)
     }
-    fn remove(&mut self, key: &VariantID) -> Option<Arc<dyn AnalysisResultInternal>> {
-        self.results.get_mut(&key.file).and_then(|x| x.remove(&key.state))
+    fn remove(&mut self, key: &dyn HasVariantID) -> Option<Arc<dyn AnalysisResultInternal>> {
+        self.results.get_mut(key.get_file()).and_then(|x| {
+            let index = x.iter().position(|(state, _)| state == key.get_state());
+            if let Some(index) = index {
+                let (_, result) = x.remove(index);
+                return Some(result);
+            }
+            None
+        })
     }
-    fn remove_file(&mut self, key: &VariantID) -> Option<HashMap<u64, Arc<dyn AnalysisResultInternal>>> {
-        self.results.remove(&key.file)
+    fn remove_file(&mut self, key: &dyn HasVariantID) -> Option<Vec<(CompiledState, Arc<dyn AnalysisResultInternal>)>> {
+        self.results.remove(key.get_file())
     }
 }
 //So truthfully, I'm not sure how this "works" as such
@@ -676,6 +836,11 @@ pub trait AnalysisResultInternal : DowncastSync + Sync + Send + 'static {
     fn as_any(&self) -> &dyn Any;
     fn result_id(&self) -> TypeId {
         TypeId::of::<Self>()
+    }
+}
+impl Debug for dyn AnalysisResultInternal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AnalysisResultInternal: {}", type_name::<Self>())
     }
 }
 impl_downcast!(sync AnalysisResultInternal);
@@ -799,4 +964,54 @@ impl Test {
         }
         return None;
     }
+}
+#[cfg(test)]
+mod guh {
+    use super::*;
+
+    #[test]
+    fn testthingy(){
+        let data = get_data();
+        let downcasted =data.into_cast::<AnalysisResultExample>();
+        let inner = downcasted.get_inner();
+        assert_eq!(inner.len(), 2);
+        assert_eq!(inner[0].1.some_text, "Hello from file 1");
+        assert_eq!(inner[1].1.some_text, "Hello from file 2");
+    }
+
+    fn get_data() -> VariantData<Arc<dyn AnalysisResultInternal>> {
+        let data = vec![
+            (SQDistinctVariant::new(
+                FileInfo::new("file1".to_string(), PathBuf::from("path/to/file1"), "MP".to_string(), common::FileType::RSquirrel),
+                CompiledState::from(SqCompilerState::one("Test".to_string(), true)),
+                "Content of file 1".to_string(),
+            ), Arc::new(AnalysisResultExample {
+                some_text: "Hello from file 1".to_string(),
+                some_number: 42,
+            }) as Arc<dyn AnalysisResultInternal>),
+            (SQDistinctVariant::new(
+                FileInfo::new("file2".to_string(), PathBuf::from("path/to/file2"), "MP".to_string(), common::FileType::RSquirrel),
+                CompiledState::from(SqCompilerState::one("Test".to_string(), true)),
+                "Content of file 2".to_string(),
+            ), Arc::new(AnalysisResultExample {
+                some_text: "Hello from file 2".to_string(),
+                some_number: 100,
+            }) as Arc<dyn AnalysisResultInternal>),
+        ];
+        return VariantData::Multi(data);
+    }
+
+    fn get_things() -> Vec<Arc<dyn AnalysisResultInternal>> {
+        let data =vec![Arc::new(AnalysisResultExample {
+            some_text: "Hello".to_string(),
+            some_number: 42,
+        }) as Arc<dyn AnalysisResultInternal>,
+        Arc::new(AnalysisResultExample {
+            some_text: "World".to_string(),
+            some_number: 100,
+        }) as Arc<dyn AnalysisResultInternal>,
+        ];
+        return data;
+    }
+
 }
