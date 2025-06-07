@@ -1,4 +1,3 @@
-use std::fs::read_to_string;
 
 use crate::ast::*;
 use crate::condition::Condition;
@@ -114,7 +113,7 @@ fn many_variants(){
     let path = "../../TestSets/ValidStructure/ManyVariants/mod/scripts/vscripts/firstFile.gnut";
     let text = read_to_string(path).unwrap();
     let result = preprocessor_grammar::parse_dbg(&text).unwrap();
-    let runon = preprocessor_grammar::to_condition_expression(&runon).unwrap();
+    let runon = preprocessor_grammar::to_condition_expression(runon).unwrap();
     println!("{:?}", result.len());
     assert!(result.len() == 9);
 }
@@ -122,7 +121,7 @@ fn many_variants(){
 #[cfg(test)]
 #[test]
 fn fuzz(){
-    use rand::{distr::Alphanumeric, Rng};
+    use rand::Rng;
 
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#abcdefghijklmnopqrstuvwxyz/*\\ \";,.!@#$%^&*()_+{}|:<>?~`-=[];',./\n";
     let mut rng = rand::rng();

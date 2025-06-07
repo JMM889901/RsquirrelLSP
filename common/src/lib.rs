@@ -1,5 +1,5 @@
 use core::panic;
-use std::{hash::{DefaultHasher, Hash, Hasher}, io::Read, path::{Path, PathBuf}, str, sync::{Arc, RwLock}};
+use std::{hash::{DefaultHasher, Hash, Hasher}, io::Read, path::PathBuf, sync::{Arc, RwLock}};
 
 #[derive(Debug, Clone)]
 pub struct FileInfo(Arc<FileInfoInternal>);
@@ -53,16 +53,16 @@ impl FileInfo {
         return *self.0.sq_parse_time.read().unwrap();
     }
     pub fn name(&self) -> &String {
-        return &self.0.name;
+        &self.0.name
     }
     pub fn path(&self) -> &PathBuf {
-        return &self.0.path;
+        &self.0.path
     }
     pub fn run_on(&self) -> &String {
-        return &self.0.run_on;
+        &self.0.run_on
     }
     pub fn ftype(&self) -> &FileType {
-        return &self.0.ftype;
+        &self.0.ftype
     }
     #[cfg(feature = "timed")]
     pub fn new(name: String, path: PathBuf, run_on: String, ftype: FileType) -> Self {
@@ -86,7 +86,7 @@ impl FileInfo {
             text: RwLock::new(None),
             offsets: RwLock::new(None),
             length: RwLock::new(None),
-            ftype: ftype,
+            ftype,
             name,
             path,
             run_on,
@@ -99,7 +99,7 @@ impl FileInfo {
             text: RwLock::new(Some(Arc::new(text))),
             offsets: RwLock::new(None),
             length: RwLock::new(None),
-            ftype: ftype,
+            ftype,
             name,
             path: PathBuf::from(path),
             run_on,
@@ -127,7 +127,7 @@ impl FileInfo {
         //Read that MF file boyos
         self.read_text();
         return self.offsets();
-        return vec![];//This probably wont happen? depends on how i rework this bit
+        vec![]//This probably wont happen? depends on how i rework this bit
     }
 
     pub fn len(&self) -> usize {
@@ -152,7 +152,7 @@ impl FileInfo {
 
     fn read_text(&self){
         //Read the file
-        let mut file = std::fs::File::open(&self.0.path);
+        let file = std::fs::File::open(&self.0.path);
         let mut contents = String::new();
 
         if let Ok(mut file) = file{
@@ -227,7 +227,7 @@ impl FileInfo {
         //This is used to identify the file in the analysis
         let mut hasher = DefaultHasher::new();
         self.0.path.hash(&mut hasher);
-        return hasher.finish();
+        hasher.finish()
     }
 }
 

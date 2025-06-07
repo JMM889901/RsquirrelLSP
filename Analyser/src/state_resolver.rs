@@ -11,7 +11,7 @@ pub trait HasState{
 pub struct CompiledState(HashMap<String, bool>);
 impl Hash for CompiledState {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),y.clone())).collect();
+        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),*y)).collect();
         vec.sort();
         for (key, value) in vec{
             key.hash(state);
@@ -22,12 +22,12 @@ impl Hash for CompiledState {
 }
 impl From<HashMap<String, bool>> for CompiledState{
     fn from(value: HashMap<String, bool>) -> Self {
-        return CompiledState(value);
+        CompiledState(value)
     }
 }
-impl Into<HashMap<String, bool>> for CompiledState{
-    fn into(self) -> HashMap<String, bool> {
-        return self.0;
+impl From<CompiledState> for HashMap<String, bool>{
+    fn from(val: CompiledState) -> Self {
+        val.0
     }
 }   
 impl CompiledState{
@@ -36,7 +36,7 @@ impl CompiledState{
         for (key, value) in &self.0 {
             result.push(format!("{}{}", value.then_some("").unwrap_or("!"), key));
         }
-        return result.join("&");
+        result.join("&")
     }
 
     pub fn do_i_reject_explicit(&self, other: &CompiledState) -> bool{
@@ -51,18 +51,18 @@ impl CompiledState{
                 return true;
             }
         }
-        return false;
+        false
     }
 
     pub fn get_problematic_keys(&self, sets: &Vec<CompiledState>) -> Vec<CompiledState>{
         //We assume that there is no one option that passes
         //First, determine common keys with self
         //We largely assume that do_i_reject_explicit is false
-        let newsets = sets.into_iter().filter_map(|set|{
+        let newsets = sets.iter().filter_map(|set|{
             self.differing_keys(set)
         });
-        let cancelled = CompiledState::cancel_set(&newsets.collect());
-        return cancelled;
+        
+        CompiledState::cancel_set(&newsets.collect())
     }
 
     pub fn will_i_always_accept_one_of(&self, sets: &Vec<CompiledState>) -> bool{
@@ -70,19 +70,19 @@ impl CompiledState{
 
         //First, determine common keys with self
         //We larely assume that do_i_reject_explicit is false
-        let newsets = sets.into_iter().filter_map(|set|{
+        let newsets = sets.iter().filter_map(|set|{
             self.differing_keys(set)
         });
         let cancelled = CompiledState::cancel_set(&newsets.collect());
-        return cancelled.is_empty();
+        cancelled.is_empty()
         //Now determine if all keys have a negation
     }
     pub fn try_resolve(&self, sets: &Vec<CompiledState>) -> Vec<CompiledState> {
-                let newsets = sets.into_iter().filter_map(|set|{
+                let newsets = sets.iter().filter_map(|set|{
             self.differing_keys(set)
         });
-        let cancelled = CompiledState::cancel_set(&newsets.collect());
-        return cancelled;
+        
+        CompiledState::cancel_set(&newsets.collect())
     }
     pub fn cancel_set(sets: &Vec<CompiledState>) -> Vec<CompiledState>{
         //This is effectively a none-recursive Quine McCluskey algorithm
@@ -147,19 +147,19 @@ impl CompiledState{
             }
             
             //We dont cancel if we have merged
-            if merged_sets.len() > 0{
+            if !merged_sets.is_empty(){
                 for result in merge_results{
                     if !newersets.contains(&result) && !merged_sets.contains(&result){
                         newersets.push(result);
                     }
                 }
                 for set in &newsets{
-                    if !newersets.contains(&set) && !merged_sets.contains(&set){
+                    if !newersets.contains(set) && !merged_sets.contains(set){
                         newersets.push(set.clone());
                     }
                 }
                 merged = true;
-            } else if cancelled_sets.len() > 0{
+            } else if !cancelled_sets.is_empty(){
                 //println!("Cancelled to sets: {:?}", cancel_results);
                 for result in cancel_results{
                     if !newersets.contains(&result) && !cancelled_sets.contains(&result){
@@ -167,7 +167,7 @@ impl CompiledState{
                     }
                 }
                 for set in &newsets{
-                    if !newersets.contains(&set) && !cancelled_sets.contains(&set){
+                    if !newersets.contains(set) && !cancelled_sets.contains(set){
                         newersets.push(set.clone());
                     }
                 }
@@ -185,7 +185,7 @@ impl CompiledState{
             newsets = newersets;
         }
         
-        return newsets;         
+        newsets
     }
     /*
         the condition MP && DEV and !MP should result in DEV being the problematic element
@@ -270,7 +270,7 @@ impl CompiledState{
             let other_new = CompiledState(other_new);
             return MergeResults::CancelledElem(self_new, other_new);
         }
-        return MergeResults::None;
+        MergeResults::None
     }
 
     pub fn differing_keys(&self, other: &CompiledState) -> Option<CompiledState>{
@@ -286,7 +286,7 @@ impl CompiledState{
         if new_map.is_empty(){
             return None;
         }
-        return Some(CompiledState(new_map));        
+        Some(CompiledState(new_map))
     }
 
     pub fn get(&self, key: &String) -> Option<bool>{//Id like more abstraction really, every place i should use this
@@ -294,19 +294,19 @@ impl CompiledState{
         if let Some(value) = self.0.get(key){
             return Some(*value);
         }
-        return None;
+        None
     }
 }
 impl From<SqCompilerState> for CompiledState{
     fn from(value: SqCompilerState) -> Self {
-        return CompiledState(value.0);
+        CompiledState(value.0)
     }//These have the same internal type but they have different purposes
     //CompilerState is from preprocessor to construct an estimated state or set of states, CompiledState is for comparisons and conclusions on that state
     //To be honest i just dont like importing things from preprocessor in analyser
 }
-impl Into<SqCompilerState> for CompiledState{
-    fn into(self) -> SqCompilerState {
-        return SqCompilerState(self.0);
+impl From<CompiledState> for SqCompilerState{
+    fn from(val: CompiledState) -> Self {
+        SqCompilerState(val.0)
     }
 }
 impl FromIterator<(String, bool)> for CompiledState{
@@ -315,7 +315,7 @@ impl FromIterator<(String, bool)> for CompiledState{
         for (key, value) in iter{
             map.insert(key, value);
         }
-        return CompiledState(map);
+        CompiledState(map)
     }
 }
 
@@ -407,9 +407,7 @@ fn test_multistep_cancel_merge(){
 }
 }
 mod merge_tests{
-use std::collections::HashMap;
 
-use super::*;
 #[test]
 fn test_merge_double_fail(){
     let mut map1 = HashMap::new();

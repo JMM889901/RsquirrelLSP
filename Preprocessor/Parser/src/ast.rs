@@ -1,7 +1,6 @@
 //This could be extended to implement parse, which would allow me to essentially parse this AST with a given compiler config, 
 //this would allow me to avoid creating a "copy" of the file for each outcome
 
-use peg::{str::LineCol, Parse};
 use super::*;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -11,7 +10,7 @@ pub struct Node{
 }
 impl Node{
     pub fn new(range: (usize, usize), ast: AST) -> Self{
-        return Node { range, ast }
+        Node { range, ast }
     }
 }
 
@@ -35,13 +34,13 @@ impl AST{
         match self{
             AST::If(vec) => vec.iter().flat_map(|x| x.get_decisions()).collect(),
             AST::Text(_) => vec![],
-            AST::RunOn(vec, condition) => return vec![vec![condition.clone()], vec.iter().flat_map(|x| x.ast.get_decisions()).collect()].concat(),
+            AST::RunOn(vec, condition) => [vec![condition.clone()], vec.iter().flat_map(|x| x.ast.get_decisions()).collect()].concat(),
         }
     }
     pub fn get_nodes(&self) -> &Vec<Node>{
         match self{
             AST::RunOn(vec, cond) =>{
-                return vec
+                vec
             }
             _ => todo!()
         }
@@ -57,27 +56,27 @@ pub enum If{
 impl If{
     pub fn get_decisions(&self) -> Vec<Condition>{
         match self{
-            If::If(condition, vec) => return vec![vec![condition.clone()], vec.iter().flat_map(|x| x.ast.get_decisions()).collect()].concat(),
+            If::If(condition, vec) => [vec![condition.clone()], vec.iter().flat_map(|x| x.ast.get_decisions()).collect()].concat(),
             If::Else(vec) => vec.iter().flat_map(|x| x.ast.get_decisions()).collect(),
         }
     }
     pub fn get_nodes(&self) -> &Vec<Node>{
         match self{
-            If::If(condition, vec) => return vec,
-            If::Else(vec) => return vec,
+            If::If(condition, vec) => vec,
+            If::Else(vec) => vec,
         }
     }
     pub fn get_endpos(&self) -> usize{
         match self{
             If::If(_, vec) | If::Else(vec) => {
-                return vec.last().unwrap().range.1 //bad
+                vec.last().unwrap().range.1 //bad
             },
         }
     }
     pub fn get_startpos(&self) -> usize{
         match self{
             If::If(_, vec) | If::Else(vec) => {
-                return vec.first().unwrap().range.0 //bad
+                vec.first().unwrap().range.0 //bad
             },
         }
     }

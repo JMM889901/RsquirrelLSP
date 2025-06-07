@@ -1,13 +1,10 @@
-use std::collections::HashMap;
-use std::hash::Hash;
-use std::result;
 
 use state::{Evaluation, SqCompilerState};
 use PreprocessorParser::ast::{AST};
 use PreprocessorParser::condition::Condition;
 pub mod state;
 pub fn get_states(ast: &AST) -> Vec<SqCompilerState>{
-    return get_states_dirty(ast);
+    get_states_dirty(ast)
 }
 
 fn get_states_dirty(ast: &AST) -> Vec<SqCompilerState>{
@@ -32,7 +29,7 @@ fn get_states_dirty(ast: &AST) -> Vec<SqCompilerState>{
     let mut permutations = Vec::new();
     //exactly 1 vm will be active at a time
     //Caution: Super duper hacky and slow, but this is a fraction of the speed anyways
-    if vms.len() > 0{
+    if !vms.is_empty(){
         vms.clear();
         vms.push("SERVER".to_string());
         vms.push("CLIENT".to_string());
@@ -48,7 +45,7 @@ fn get_states_dirty(ast: &AST) -> Vec<SqCompilerState>{
     
 
     let condition_permutations = get_condition_permutations(conditions_dedup);
-    if permutations.len() == 0{
+    if permutations.is_empty(){
         return filter_acceptable_states(ast.get_run_on().unwrap(), condition_permutations)
     }
     let mut result: Vec<SqCompilerState> = permutations.iter().flat_map(|permutation| {
@@ -57,10 +54,10 @@ fn get_states_dirty(ast: &AST) -> Vec<SqCompilerState>{
         })
     }).collect();
 
-    if result.len() == 0{
+    if result.is_empty(){
         result = permutations;
     }
-    return filter_acceptable_states(ast.get_run_on().unwrap(), result)
+    filter_acceptable_states(ast.get_run_on().unwrap(), result)
 }
 
 pub fn get_condition_permutations(conditions: Vec<String>) -> Vec<SqCompilerState> {//Handle runOn conditions, probably just filter conditions that conflict idk
@@ -70,9 +67,9 @@ pub fn get_condition_permutations(conditions: Vec<String>) -> Vec<SqCompilerStat
         let and_permutation = SqCompilerState::one(head.to_string(), true);
         let not_permutation = SqCompilerState::one(head.to_string(), false);
 
-        return tail_permutations.iter().flat_map(|tail_permutation| {
+        tail_permutations.iter().flat_map(|tail_permutation| {
             vec![and_permutation.merge(tail_permutation), not_permutation.merge(tail_permutation)]
-        }).collect();
+        }).collect()
     } else{
         vec![SqCompilerState::empty()]
     }
@@ -86,7 +83,7 @@ pub fn filter_acceptable_states(run_on: Condition, states: Vec<SqCompilerState>)
             filtered_conditions.push(state);
         }
     }
-    return filtered_conditions
+    filtered_conditions
 }
 
 #[cfg(test)]

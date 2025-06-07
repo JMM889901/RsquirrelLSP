@@ -1,4 +1,4 @@
-use std::{clone, collections::{HashMap, HashSet}, fmt, hash::Hash};
+use std::{collections::HashMap, hash::Hash};
 
 use PreprocessorParser::condition::Condition;
 
@@ -30,10 +30,10 @@ impl SqCompilerState{
     }
     pub fn identifier(&self) -> String{
 
-        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),y.clone())).collect();
+        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),*y)).collect();
         vec.sort();
         vec.iter().map(|(x, y)| {
-            vec![ "-".to_string(), if !*y{
+            ["-".to_string(), if !*y{
                 format!("!{}", x)
             } else {
                 x.clone()
@@ -43,10 +43,10 @@ impl SqCompilerState{
 
     pub fn to_path(&self) -> String{
 
-        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),y.clone())).collect();
+        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),*y)).collect();
         vec.sort();
         vec.iter().map(|(x, y)| {
-            vec![ "/".to_string(), if !*y{//Holy shit i am dumb
+            ["/".to_string(), if !*y{//Holy shit i am dumb
                 format!("!{}", x)
             } else {
                 x.clone()
@@ -57,7 +57,7 @@ impl SqCompilerState{
     pub fn one(elem: String, bool: bool) -> Self{
         let mut map = HashMap::new();
         map.insert(elem, bool);
-        return SqCompilerState(map);
+        SqCompilerState(map)
     }
     pub fn insert_terms(&mut self, elems: Vec<String>, bool: bool){
         for elem in elems{
@@ -70,15 +70,15 @@ impl SqCompilerState{
     pub fn merge(&self, other: &Self) -> Self{
         let mut new = HashMap::new();
         for (term, value) in &self.0{
-            new.insert(term.clone(), value.clone());
+            new.insert(term.clone(), *value);
         }
         for (term, value) in &other.0{
-            new.insert(term.clone(), value.clone());
+            new.insert(term.clone(), *value);
         }
-        return SqCompilerState(new);
+        SqCompilerState(new)
     }
     pub fn empty() -> Self{
-        return SqCompilerState(HashMap::new())
+        SqCompilerState(HashMap::new())
     }
 
     pub fn evaluate_condition(&self, condition: &Condition) -> Evaluation{
@@ -118,7 +118,7 @@ impl SqCompilerState{
 }
 impl Hash for SqCompilerState {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),y.clone())).collect();
+        let mut vec: Vec<(String, bool)> = self.0.iter().map(|(x,y)| (x.clone(),*y)).collect();
         vec.sort();
         for (key, value) in vec{
             key.hash(state);

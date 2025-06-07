@@ -88,8 +88,8 @@ impl<T> VariantData<T> {
     }
     pub fn map<U, F: FnMut(&SQDistinctVariant, &T) -> U>(&self, f: &mut F) -> VariantData<U> {
         match self {
-            VariantData::Multi(vec) => VariantData::Multi(vec.into_iter().map(|(v, data)| (v.clone(), f(v, data))).collect()),
-            VariantData::Possible(vec, bad) => VariantData::Possible(vec.into_iter().map(|(v, data)| (v.clone(), f(v, data))).collect(), bad.clone()),
+            VariantData::Multi(vec) => VariantData::Multi(vec.iter().map(|(v, data)| (v.clone(), f(v, data))).collect()),
+            VariantData::Possible(vec, bad) => VariantData::Possible(vec.iter().map(|(v, data)| (v.clone(), f(v, data))).collect(), bad.clone()),
             VariantData::Single(v, data) => VariantData::Single(v.clone(), f(v, data)),
             VariantData::NonePreserving(id, state) => VariantData::NonePreserving(id.clone(), state.clone()),
             VariantData::None => VariantData::None,
@@ -99,8 +99,8 @@ impl<T> VariantData<T> {
     ///SUPER IMPORTANT: This can and will change completion state, its up to you (by which i mean future me) to identify() afterwards 
     pub fn filter_map<U, F: FnMut(&SQDistinctVariant, &T) -> Option<U>>(&self, f: &mut F) -> VariantData<U> {
         match self {
-            VariantData::Multi(vec) => VariantData::Multi(vec.into_iter().filter_map(|(v, data)| f(v, data).map(|d| (v.clone(), d))).collect()),
-            VariantData::Possible(vec, bad) => VariantData::Possible(vec.into_iter().filter_map(|(v, data)| f(v, data).map(|d| (v.clone(), d))).collect(), bad.clone()),
+            VariantData::Multi(vec) => VariantData::Multi(vec.iter().filter_map(|(v, data)| f(v, data).map(|d| (v.clone(), d))).collect()),
+            VariantData::Possible(vec, bad) => VariantData::Possible(vec.iter().filter_map(|(v, data)| f(v, data).map(|d| (v.clone(), d))).collect(), bad.clone()),
             VariantData::Single(v, data) => f(v, data).map_or(VariantData::None, |d| VariantData::Single(v.clone(), d)),
             VariantData::NonePreserving(id, state) => VariantData::NonePreserving(id.clone(), state.clone()),
             VariantData::None => VariantData::None,
@@ -118,7 +118,7 @@ impl<T> VariantData<T> {
     pub fn for_missing<F: FnMut(&CompiledState)>(&self, mut f: F) {
         match self {
             VariantData::Multi(_) => {},
-            VariantData::Possible(_, bad) => bad.iter().for_each(|state| f(state)),
+            VariantData::Possible(_, bad) => bad.iter().for_each(&mut f),
             VariantData::Single(_, _) => {},
             VariantData::NonePreserving(_, state) => f(state),
             VariantData::None => {},
@@ -143,7 +143,7 @@ impl<T> VariantData<T> {
             _ => ()
         }
         }
-        return VariantData::Multi(newlist);
+        VariantData::Multi(newlist)
     }
     pub fn extend_unchecked(self, other: Self) -> Self{
         let new = match other {
@@ -163,7 +163,7 @@ impl<T> VariantData<T> {
         if combined.is_empty() {
             return VariantData::None;
         }
-        return VariantData::Multi(combined);
+        VariantData::Multi(combined)
         
     }
     pub fn get_inner(self) -> Vec<(SQDistinctVariant, T)> {
@@ -206,10 +206,10 @@ impl<T> VariantData<T> {
                 return VariantData::Multi(items);
             }
         }
-        if items.len() == 0{
-            return VariantData::NonePreserving(context.get_file().clone(), context.get_state().clone());
+        if items.is_empty(){
+            VariantData::NonePreserving(context.get_file().clone(), context.get_state().clone())
         }else{ //If we have multiple matches then return a multi dependency
-            return VariantData::Possible(items, resolved);
+            VariantData::Possible(items, resolved)
         }
     }
 
@@ -238,8 +238,8 @@ impl<T: Debug> Debug for VariantData<T> {
 impl<T> VariantData<Vec<T>> {
     pub fn flatten(&self) -> Vec<&T> {
         match self {
-            VariantData::Multi(vec) => vec.iter().map(|(_, data)| data).flatten().collect(),
-            VariantData::Possible(vec, _) => vec.iter().map(|(_, data)| data).flatten().collect(),
+            VariantData::Multi(vec) => vec.iter().flat_map(|(_, data)| data).collect(),
+            VariantData::Possible(vec, _) => vec.iter().flat_map(|(_, data)| data).collect(),
             VariantData::Single(_, data) => data.iter().collect(),
             VariantData::NonePreserving(_, _) => vec![],
             VariantData::None => vec![],
@@ -259,7 +259,7 @@ impl<T> VariantData<Vec<T>> {
 //This really sucks
 pub fn for_file(content: &Vec<SQDistinctVariant>, provided: &CompiledState) -> Option<VariantData<()>> {
         //Apply increasing filters to the context
-    let mut filter = content.iter().filter(|(file)| {
+    let mut filter = content.iter().filter(|file| {
 
         //If this context explicitly contradicts the provided context then skip it
         !provided.do_i_reject_explicit(&file.0.state)
@@ -272,16 +272,19 @@ pub fn for_file(content: &Vec<SQDistinctVariant>, provided: &CompiledState) -> O
         //If we have a match then return the first one
         if filter.len() == 1{
             let item = filter.remove(0);
-            return Some(VariantData::Single(item.0, item.1));
+            return Some({
+                item.1;
+                VariantData::Single(item.0, ())
+            });
         }else if filter.len() > 1{
             //If we have multiple matches then return a multi dependency
             return Some(VariantData::Multi(filter));
         }
     }
-    if filter.len() == 0{
-        return None;
+    if filter.is_empty(){
+        None
     }else{ //If we have multiple matches then return a multi dependency
-        return Some(VariantData::Possible(filter, resolved));
+        Some(VariantData::Possible(filter, resolved))
     }
 }
 

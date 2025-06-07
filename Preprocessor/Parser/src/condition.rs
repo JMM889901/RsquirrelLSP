@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 
 
 #[derive(Clone, PartialEq, Debug)]
@@ -21,20 +20,20 @@ pub enum Condition{
 //}
 impl Condition{
     pub fn and(a: Condition, b: Condition) -> Condition{
-        return Condition::And(Box::new(a), Box::new(b))
+        Condition::And(Box::new(a), Box::new(b))
     }
     pub fn or(a: Condition, b: Condition) -> Condition{
-        return Condition::Or(Box::new(a), Box::new(b))
+        Condition::Or(Box::new(a), Box::new(b))
     }
     pub fn term(a: &str) -> Condition{
-        return Condition::Term(a.to_string())
+        Condition::Term(a.to_string())
     }
 
     //The following utils are used in other parts of the codebase
     pub fn get_terms(&self) -> Vec<String>{
         match self{
-            Self::And(a, b) => vec![a.get_terms(), b.get_terms()].concat(),
-            Self::Or(a, b) => vec![a.get_terms(), b.get_terms()].concat(),
+            Self::And(a, b) => [a.get_terms(), b.get_terms()].concat(),
+            Self::Or(a, b) => [a.get_terms(), b.get_terms()].concat(),
             Self::Not(a) => a.get_terms(),
             Self::Term(term) => vec![term.clone()]
         }
