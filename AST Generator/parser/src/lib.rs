@@ -38,7 +38,14 @@ pub struct ASTParseResult{
     pub parse_data: SquirrelParse,
     pub run: Arc<RunPrimitiveInfo>,//Again, this does not really need to be like this but i dont feel like yanking out all that code
 }
-impl AnalysisResult for ASTParseResult {}
+impl AnalysisResult for ASTParseResult {
+    fn get_errors(&self, context: &SQDistinctVariant) -> Vec<(usize, usize, String)> {
+        let errs = self.parse_data.errs.read().unwrap();
+        errs.iter().map(|e| {
+            (e.range.0, e.range.1, format!("{:?}", e.value))
+        }).collect()
+    }
+}
 
 
 #[derive(Debug, Clone)]
