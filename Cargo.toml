@@ -10,6 +10,6 @@ members = [
 "AST Generator/TokenIdentifier",
 "AST Generator/analyser",
 "E2E",
-"LSP", "Analyser",
+"LSP", "Analyser", "v2stuff/sqparse_stuff", "v2stuff/parse_common", "v2stuff/preprocessor/preprocessor_parser",
 
 ]

@@ -1,0 +1,13 @@
+[package]
+name = "parse_common"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "parse_common"
+path = "src/lib.rs" 
+
+
+[dependencies]
+sqparse = { path = "../sqparse_preproc/sqparse" }
+chumsky = "0.10.1"

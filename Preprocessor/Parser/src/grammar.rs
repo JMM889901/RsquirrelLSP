@@ -95,10 +95,12 @@ assert!(result.len() == 3);
 //assert_eq!(result, expect)
 }
 
+
+
 #[test]
 fn big_file_parses(){
     //Due to the size of the file hardcording the right answer isnt practical, this is just to test that things look "about right"
-    let input = read_to_string("../test/SingleFile.nut").unwrap();
+    let input = std::fs::read_to_string("../test/SingleFile.nut").unwrap();
     let result = preprocessor_grammar::parse_dbg(&input).unwrap();
     println!("{:?}", result.len());
     //5 Distinct blocks, file uses a lot of #else
@@ -111,7 +113,7 @@ fn big_file_parses(){
 fn many_variants(){
     let runon = "SERVER || CLIENT || UI";
     let path = "../../TestSets/ValidStructure/ManyVariants/mod/scripts/vscripts/firstFile.gnut";
-    let text = read_to_string(path).unwrap();
+    let text = std::fs::read_to_string(path).unwrap();
     let result = preprocessor_grammar::parse_dbg(&text).unwrap();
     let runon = preprocessor_grammar::to_condition_expression(runon).unwrap();
     println!("{:?}", result.len());

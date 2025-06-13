@@ -85,6 +85,9 @@ pub fn filter_acceptable_states(run_on: Condition, states: Vec<SqCompilerState>)
     }
     filtered_conditions
 }
+#[cfg(test)]
+use std::collections::HashMap;
+
 
 #[cfg(test)]
 #[test]

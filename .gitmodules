@@ -1,0 +1,3 @@
+[submodule "v2stuff/sqparse_preproc/sqparse"]
+	path = v2stuff/sqparse_preproc/sqparse
+	url = https://github.com/uniboi/sqparse
