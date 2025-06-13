@@ -11,3 +11,4 @@ path = "src/lib.rs"
 sqparse = { path = "../../sqparse_preproc/sqparse" }
 chumsky = "0.10.1"
 parse_common = { path = "../../parse_common" }
+paste = "1.0.15"

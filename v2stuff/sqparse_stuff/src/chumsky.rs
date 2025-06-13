@@ -15,20 +15,26 @@ fn example_tokens() -> Vec<TokenItem<'static>> {
         string guh
 	} file
 //regular comment
-    #endif
+    #endif#1wsd
+    void function (){
+    this function has bad text
+    Can i lex this?
+    int x = (1 + 3
+
     ";
 
-    let result = tokenize(example_string, sqparse::Flavor::SquirrelRespawn).unwrap();
+    let result = tokenize(example_string, sqparse::Flavor::SquirrelRespawn).into_tokens();
     result
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum PreprocessorAST<'ast>{
     If {
-        condition: Vec<TokenItem<'ast>>,
+        condition: PreprocessorExpression<'ast>,
         body: Vec<PreprocessorAST<'ast>>,
     },
     ElseIf {
-        condition: Vec<TokenItem<'ast>>,
+        condition: PreprocessorExpression<'ast>,
         body: Vec<PreprocessorAST<'ast>>,
     },
     Else {
@@ -149,7 +155,7 @@ fn preprocessor_expression<'src>() -> impl Parser<'src, &'src [TokenItem<'src>],
 }
 #[test]
 fn test_expression() {
-    let text = "#if SERVER & CLIENT && (MP || DEV)";
+    let text = "#if SERVER && CLIENT && (MP || DEV)";
     let tokens = tokenize(text, Flavor::SquirrelRespawn);
     let tokens = tokens.into_tokens().into_iter().skip(1).collect::<Vec<_>>(); 
     println!("Tokens: {:#?}", tokens);
@@ -161,21 +167,97 @@ fn test_expression() {
     } else {
         println!("Failed to parse expression");
     }
-    let sqparse_result = sqparse::parse(tokens.as_slice(), Flavor::SquirrelRespawn);
-    if let Ok(ast) = sqparse_result {
-        println!("SQParse AST: {:#?}", ast);
-    } else {
-        println!("Failed to parse with SQParse - {:?}", sqparse_result.err());
-}}
+
+}
 
 #[test]
 fn example_parse() {
     let tokens = example_tokens();
     let parser = parser();
     println!("Tokens: {:#?}", tokens);
-    let result = parser.parse(tokens.as_slice());
-    println!("{:#?}", result);
+    //let result = parser.parse(tokens.as_slice());
+    //println!("{:#?}", result);
+}
 
+fn main_parser<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Vec<PreprocessorAST<'src>>> {
+    let preproc_start = terminal(TerminalToken::PreprocessorIf).ignore_then(
+        preprocessor_expression()
+    ).boxed();
+    let preproc_else_if = terminal(TerminalToken::PreprocessorElseIf);
+    let preproc_else = terminal(TerminalToken::PreprocessorElse);
+    let body = body_parser().boxed();
+    let preproc_end = terminal(TerminalToken::PreprocessorEndIf).ignored().or(end());
+
+    let recursive = recursive(|expr| choice((
+        preproc_start.clone().then(expr).map(|(condition, body)| {
+            PreprocessorAST::If {
+                condition,
+                body
+            }
+        }).then_ignore(preproc_end.clone()),
+        body.clone(),
+        )).repeated().collect::<Vec<_>>()
+    );
+    recursive
+}
+fn any_preproc_token<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], TokenItem<'src>> {
+    any().filter(|item: &TokenItem<'src>| {
+        matches!(item.token.ty, TokenType::Terminal(TerminalToken::PreprocessorIf) |
+                  TokenType::Terminal(TerminalToken::PreprocessorElseIf) |
+                  TokenType::Terminal(TerminalToken::PreprocessorElse) |
+                  TokenType::Terminal(TerminalToken::PreprocessorEndIf))
+    })
+}
+
+#[test]
+fn test_parse() {
+    let text = "#if SERVER && CLIENT";
+    let tokens = tokenize(text, Flavor::SquirrelRespawn).into_tokens();
+    let preproc_start = terminal(TerminalToken::PreprocessorIf).ignore_then(
+        preprocessor_expression()
+    ).boxed();
+
+
+    let example_parse = preproc_start.clone().parse(tokens.as_slice());
+    println!("Example Parse Result: {:#?}", example_parse);
+
+    let text = "
+    #if SERVER
+    void function() {
+        #if UI
+        int test = 0
+        #endif
+    }
+";
+    let tokens = tokenize(text, Flavor::SquirrelRespawn).into_tokens();
+
+    let with_body = preproc_start
+        .then(body_parser())
+        .then_ignore(terminal(TerminalToken::PreprocessorEndIf))
+        .map(|(condition, body)| PreprocessorAST::If {
+            condition,
+            body: vec![body],
+        });
+    let result = with_body.parse(tokens.as_slice());
+    println!("With Body Parse Result: {:#?}", result);
+
+    let parser = main_parser();
+    let result = parser.parse(tokens.as_slice());
+    let result = result.into_output();
+    match result {
+        Some(ast) => {
+            println!("Parsed Preprocessor AST: {:#?}", ast);
+        },
+        None => {
+            println!("Failed to parse preprocessor directives");
+        }
+    }
+}
+
+fn body_parser<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], PreprocessorAST<'src>> {
+    any().and_is(any_preproc_token().not()).repeated().at_least(1).collect::<Vec<_>>().map(|items| {
+        PreprocessorAST::Block(items)
+    })
 }
 
 
@@ -183,13 +265,3 @@ fn parser<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Vec<String>> {
     any().to("hello!").map(|x| x.to_string()).repeated().collect::<Vec<_>>()
 }
 
-fn start_preproc<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], PreprocessorAST<'src>> {
-    let directive = any().filter(|item: &TokenItem<'src>| {
-        matches!(item.token.ty, TokenType::Terminal(TerminalToken::PreprocessorIf))
-    }).map(|_| PreprocessorAST::If {
-        condition: Vec::new(), // Placeholder for condition parsing
-        body: vec![],
-    });
-    directive
-    
-}

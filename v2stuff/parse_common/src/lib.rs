@@ -1,47 +1,264 @@
-use std::{fmt::Display};
 
-use sqparse::TokenItem;
+use std::{cmp::{self, max}, fmt::Display};
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ASTElement<T, E>{
-    pub item: ASTState<T, E>,
-    pub range: std::ops::Range<usize>,
+use chumsky::{extra::Err, input::InputRef, label::LabelError, prelude::*, Boxed, Parser};
+use sqparse::{ast::Identifier, token::{TerminalToken, Token, TokenType}, TokenItem};
+use chumsky::DefaultExpected;
+
+use crate::{errors::expected::{ExpectedArbitary, ExpectedNoMatch}, parsed_element::{Expectable, Parsed}};
+
+
+pub mod parse_state;
+pub mod errors;
+pub mod parsed_element;
+
+
+
+pub fn identifier<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<String>> {
+    any().try_map(
+        |item: TokenItem<'src>, span| {
+            if let TokenType::Identifier(id) = item.token.ty {
+                return Ok(Parsed {
+                    range: span,
+                    item: id.to_string(),
+                    polluted: 0,
+                    errors: vec![],
+                })
+            }
+            Err(EmptyErr::default())
+        },
+    )
 }
-#[derive(Debug, Clone, PartialEq)]
-pub enum ASTState<T, E>{
-    Matched(T),
-    Substitute(T, T, Vec<T>),//Gave, Got, Expected, used for explicit substitution error handling (IE, automatically replacing a single & with && in a preprocessor expression)
-    Expected(T, Vec<T>),//Got, Expected, but we know roughly what was expected
-    Recoverable(T),//Got
-    Unrecoverable(T),//Got
-    WithError(Box<ASTState<T, E>>, E),//Bad, dont use
-    Error(E), //Error message
+
+pub fn terminal<'src>() -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<TerminalToken>> {
+    any().try_map(
+        |item: TokenItem<'src>, span| {
+            if let TokenType::Terminal(token) = item.token.ty {
+                return Ok(Parsed {
+                    range: span,
+                    item: token,
+                    polluted: 0,
+                    errors: vec![],
+                })
+            }
+            Err(EmptyErr::default())
+        },
+    ).boxed()
 }
-impl<T: Display, E: Display> Display for ASTState<T, E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ASTState::Matched(item) => write!(f, "Matched: {}", item),
-            ASTState::Substitute(gave, got, expected) => write!(f, "Got: {}, Substituted: {}, Expected: {}", got, gave, expected.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ")),
-            //If god did not want me to create horrific oneliners, he would not have made map functions
-            ASTState::Expected(item, expected) => write!(f, "Got: {}, Expected: {}", item, expected.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ")),
-            ASTState::Recoverable(item) => write!(f, "Recoverable, got: {}", item),
-            ASTState::Unrecoverable(item) => write!(f, "Unrecoverable, got: {}", item),//The name is bad, generally "non-recoverable" shouldn't happen, Thats the entire reason
-            //I'm not just using Sqparses inbuilt parser, specifically this is the equivalent of a not-matcheds
-            ASTState::WithError(state, error) => write!(f, "With Error: {}, Error: {}", state, error),
-            ASTState::Error(error) => write!(f, "Error: {}", error),
+pub fn accept<'src, T: Expectable>(
+    token: T,
+    parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+) -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> {
+    parser.filter(
+        move |item: &Parsed<T>| {
+            item.item.matches(&token)
+        },
+    )
+}
+
+/// Allows the match to pass, if this IS a terminal, but not the expected
+pub fn expect_terminal<'src>(
+    token: TerminalToken,
+) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<TerminalToken>> {
+    terminal().map(
+        move |mut item: Parsed<TerminalToken>| {
+            item.expect(vec![token]);
+            item
+        },
+    ).boxed()
+}
+
+pub fn expect_match<'src, T: Expectable + Clone> (
+    parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+    expected: Vec<T>,
+) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<T>> 
+where
+{
+    parser.map(
+        move |mut item: Parsed<T>| {
+            item.expect(expected.clone());
+            item
+        },
+    ).boxed()
+}
+
+
+pub fn then_expect<'src, T, V>(
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+    expected: Vec<V>,
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<T>, Option<Parsed<V>>)>
+where
+    V: Expectable + Clone,
+{
+    base_parser.
+    then(expect_match(second_parser, expected.clone()).or_not())
+    .map(move |(mut first, second)| {
+        if let Some(mut second) = second {
+            (first, Some(second))
+        } else {
+            let err = ExpectedNoMatch::new(expected.clone(), first.range.start);
+            first.add_error(err);
+            (first, None)
         }
-    }
-}
-impl<T, E> ASTElement<T, E> {
-    pub fn can_continue(&self) -> bool {
-        matches!(&self.item, 
-            ASTState::Matched(_) | 
-            ASTState::Recoverable(_) |
-            ASTState::Substitute(_, _, _))
-    }
+    })
 }
 
 
-pub fn lex_string(source: &str) -> Vec<TokenItem>{
-    sqparse::tokenize(source, sqparse::Flavor::SquirrelRespawn).unwrap()
+pub fn then_expect_named<'src, T, V>(
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+    expected: &'src str,
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<T>, Option<Parsed<V>>)> {
+    base_parser.then(second_parser.or_not())
+    .map(move |(mut first, second)| {
+        if let Some(mut second) = second {
+            (first, Some(second))
+        } else {
+            let err = ExpectedArbitary::new(expected.to_string(), first.range.start);
+            first.add_error(err);
+            (first, None)
+        }
+    })
+}
+pub fn ending_or_default<'src, T, V: Clone>(
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Vec<Parsed<T>>> + 'src,
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
+    expected: &'src str,
+    default: V,
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Vec<Parsed<T>>, Parsed<V>)> {
+    base_parser.then(second_parser.or_not())
+        .map(move |(mut first, second)| {
+            if let Some(second) = second {
+                (first, second)
+            } else {
+                let default_parsed = Parsed::new(first.last().map(|x| x.range).unwrap(), default.clone());
+                let err = ExpectedArbitary::new(expected.to_string(), first.last().map_or_else(|| 0, |x| x.range.start));
+                if let Some(last) = first.last_mut() {
+                    last.add_error(err);
+                }
+                (first, default_parsed)
+            }
+        })
+
+}
+
+pub fn ending_or_fn<'src, T, V>(
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Vec<Parsed<T>>> + 'src,
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
+    expected: &'src str,
+    default: impl Fn() -> V
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Vec<Parsed<T>>, Parsed<V>)> {
+    base_parser.then(second_parser.or_not())
+        .try_map(move |(mut first, second), span| {
+            if let Some(second) = second {
+                Ok((first, second))
+            } else {
+                let mut default_parsed = Parsed::new(first.last().map(|x| x.range).unwrap(), default());
+                let err = ExpectedArbitary::new(expected.to_string(), first.last().map_or_else(|| 0, |x| x.range.start));
+                if let Some(last) = first.last_mut() {
+                    //last.add_error(err.clone());
+                } else {
+                    return Err(EmptyErr::default());//We matched rule 1 0 times and didnt match rule 2, so presumably nothing matched
+                }
+                default_parsed.add_error(err);
+                Ok((first, default_parsed))
+            }
+        })
+
+}
+
+
+
+pub fn then_or_default<'src, T, V: Clone>(
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
+    expected: &'src str,
+    default: V,
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<T>, Parsed<V>)> {
+    base_parser.then(second_parser.or_not())
+        .map(move |(mut first, second)| {
+            if let Some(second) = second {
+                (first, second)
+            } else {
+                let default_parsed = Parsed::new(first.range, default.clone());
+                let err = ExpectedArbitary::new(expected.to_string(), first.range.start);
+                first.add_error(err);
+                (first, default_parsed)
+            }
+        })
+}
+
+
+
+
+//Try both, if both exists match, if one exists match and register the error, fail if neither
+//This is really quite pricy, honestly not sure if its worth it over traditional "skip until the error goes away" recovery
+pub fn try_both<'src, 
+T: 'src,
+V: 'src,//Expectable explicitly refers to comparing against a set of expected, we dont need it for this which tests did it match
+>(first_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+    first_expected: &'src str,
+    second_parser: Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<V>>,
+    second_expected: &'src str,
+) -> impl Parser<'src, &'src [TokenItem<'src>], Result<(Parsed<T>, Option<Parsed<V>>), Parsed<V>>> {
+    let first_exists = first_parser.then(second_parser.clone().or_not()).map(
+        move |(mut first, second)| {
+            if let Some(mut second) = second {
+                Ok((first, Some(second)))
+            } else {
+                let err = ExpectedArbitary::new(second_expected.to_string(), first.range.start);
+                first.add_error(err);
+                Ok((first, None))
+            }
+        }
+    );
+    let second_exists = second_parser.map(
+        move |mut second| {
+            let err = ExpectedArbitary::new(first_expected.to_string(), second.range.start);
+            second.add_error(err);
+            Err(second)
+        }
+    );
+    first_exists.or(second_exists)
+        .boxed()
+}
+
+
+
+
+
+/// You may be asking yourself "Isnt this literally the opposite of what a peg is meant to be".
+/// Shut up nerd
+pub fn choose_best<'src, T: Expectable + Clone>(
+    parsers: Vec<impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src>,
+) -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> {
+    custom(
+        move |inputref: &mut InputRef<_, _>| {
+            let save = inputref.save();
+            let mut best_position = inputref.save();
+            let mut best: Option<Parsed<T>> = None;
+            for parser in &parsers {
+                if let Ok(result) = inputref.parse(parser) {
+                    if let Some(ref best_result) = best {
+                        if result.polluted < best_result.polluted {
+                            best_position = inputref.save();
+                            best = Some(result);
+                        }
+                    } else {
+                        best_position = inputref.save();
+                        best = Some(result);
+                    }
+                }
+                inputref.rewind(save.clone());
+            }
+            if let Some(best_result) = best {
+                inputref.rewind(best_position);
+                Ok(best_result)
+            } else {
+                //I dont think i need to rewind here
+                Err(EmptyErr::default())
+            }
+        }
+    )
 }
