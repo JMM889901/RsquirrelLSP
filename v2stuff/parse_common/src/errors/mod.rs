@@ -38,22 +38,31 @@ pub enum ErrorLevel {
 }//The parser can recover from a full error (such as using & instead of &&), but the rsquirrel compiler cannot.
 //TODO: do i need this to be send/sync?
 pub trait TryClone {
-    fn try_clone(&self) -> Option<Box<dyn ParseError>> {
+    fn try_clone<'src>(&self) -> Option<Box<dyn ParseError + 'src>> where Self: 'src {
         None//Fucking traits
     }
 }
 
-pub trait ParseError : TryClone + Debug + Send + Sync + 'static {
+pub trait ParseError : TryClone + Debug + Send + Sync {
     fn rank(&self) -> usize;
     fn level(&self) -> ErrorLevel;
     fn text(&self) -> String;//Redundant
     fn range(&self) -> SimpleSpan;
-    fn type_id(&self) -> std::any::TypeId {
+    fn type_id(&self) -> std::any::TypeId where Self: 'static {
         std::any::TypeId::of::<Self>()
     }
 }
-
+/* 
 impl Clone for Box<dyn ParseError> {
+    fn clone(&self) -> Self {
+        if let Some(cloned) = self.as_ref().try_clone() {
+            cloned
+        } else {
+            panic!("Cannot clone a ParseError that does not implement TryClone");
+        }
+    }
+}*/
+impl Clone for Box<dyn ParseError + '_> {
     fn clone(&self) -> Self {
         if let Some(cloned) = self.as_ref().try_clone() {
             cloned
@@ -63,7 +72,7 @@ impl Clone for Box<dyn ParseError> {
     }
 }
 impl<T: Clone> TryClone for T where T: ParseError {
-    fn try_clone(&self) -> Option<Box<dyn ParseError>> {
+    fn try_clone<'src>(&self) -> Option<Box<dyn ParseError + 'src>> where Self: 'src {
         Some(Box::new(self.clone()))
     }
 }

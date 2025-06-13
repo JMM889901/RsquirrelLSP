@@ -1,28 +1,31 @@
 use parse_common::errors::ErrorRank;
 use parse_common::parsed_element::{ParseVisitable, Parsed, Visitable};
+use paste::paste;
 use sqparse::{token::TokenType, TokenItem};
 use std::cmp::{max, min};
 use std::ops::Range;
-use paste::paste;
-
-
-
 
 use crate::errors::PreprocessorError;
-#[derive(Debug, PartialEq)]
-pub enum PreprocessorExpression{
+#[derive(Debug, Clone, PartialEq)]
+pub enum PreprocessorExpression<'src> {
     Identifier(String),
-    Placeholder,//Syntax error, missing identifier
-    Bracketed(Box<Parsed<PreprocessorExpression>>),
-    And(Box<Parsed<PreprocessorExpression>>, Box<Parsed<PreprocessorExpression>>),
-    Or(Box<Parsed<PreprocessorExpression>>, Box<Parsed<PreprocessorExpression>>),   
-    Not(Box<Parsed<PreprocessorExpression>>),
+    Placeholder, //Syntax error, missing identifier
+    Bracketed(Box<Parsed<'src, PreprocessorExpression<'src>>>),
+    And(
+        Box<Parsed<'src, PreprocessorExpression<'src>>>,
+        Box<Parsed<'src, PreprocessorExpression<'src>>>,
+    ),
+    Or(
+        Box<Parsed<'src, PreprocessorExpression<'src>>>,
+        Box<Parsed<'src, PreprocessorExpression<'src>>>,
+    ),
+    Not(Box<Parsed<'src, PreprocessorExpression<'src>>>),
 }
-impl ParseVisitable for PreprocessorExpression {
+impl<'src> ParseVisitable<'src> for PreprocessorExpression<'src> {
     fn visit_parse_children(
-        &self,
-        function: &mut impl FnMut(&Parsed<PreprocessorExpression>),
-        pre_visit: &mut impl FnMut(&Parsed<PreprocessorExpression>) -> bool,
+        &'src self,
+        function: &mut impl FnMut(&'src Parsed<'src, Self>),
+        pre_visit: &mut impl FnMut(&'src Parsed<'src, Self>) -> bool,
     ) {
         match self {
             PreprocessorExpression::Identifier(_) | PreprocessorExpression::Placeholder => {}
@@ -42,11 +45,10 @@ impl ParseVisitable for PreprocessorExpression {
             }
         }
     }
-
 }
 /*
 pub type PreprocElement<'src, T> =
-    MatchElement<T, PreprocessorError<'src>>; 
+    MatchElement<T, PreprocessorError<'src>>;
 pub type PreprocElement2<'src> = TokenElement<'src, PreprocessorAST<'src>, PreprocessorError<'src>>;
 pub type PreprocExpression<'src> =
     TokenElement<'src, PreprocessorExpression<'src>, PreprocessorError<'src>>;
@@ -83,7 +85,7 @@ pub enum PreprocessorExpression<'ast> {
 impl<'ast> PreprocessorExpression<'ast> {
 
 }
-/* 
+/*
 impl std::fmt::Display for PreprocessorExpression<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

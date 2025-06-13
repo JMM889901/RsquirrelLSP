@@ -8,7 +8,7 @@ pub struct UnexpectedToken<T> {
     pub token: T,
     pub range: SimpleSpan,
 }
-impl<T: StringToken + Debug + Clone + Send + Sync + 'static> ParseError for UnexpectedToken<T>
+impl<T: StringToken + Debug + Clone + Send + Sync> ParseError for UnexpectedToken<T>
 {
     fn rank(&self) -> usize {
         DefaultErrorRank::unknown_token()

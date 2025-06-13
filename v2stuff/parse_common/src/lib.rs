@@ -5,16 +5,31 @@ use chumsky::{extra::Err, input::InputRef, label::LabelError, prelude::*, Boxed,
 use sqparse::{ast::Identifier, token::{TerminalToken, Token, TokenType}, TokenItem};
 use chumsky::DefaultExpected;
 
-use crate::{errors::expected::{ExpectedArbitary, ExpectedNoMatch}, parsed_element::{Expectable, Parsed}};
+use crate::{errors::{expected::{ExpectedArbitary, ExpectedNoMatch}, unknown::UnexpectedToken}, parsed_element::{Expectable, Parsed}};
 
 
 pub mod parse_state;
 pub mod errors;
 pub mod parsed_element;
 
+pub fn fallback<'src, T: Clone + 'src>(
+    backup_token: T,
+) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, T>> {
+    any()
+        .map(move |item: TokenItem<'src>| {
+            let span = SimpleSpan::from(item.token.range.clone());
+            let err = UnexpectedToken {
+                token: item,
+                range: span,
+            };
+            let mut token = Parsed::new(span, backup_token.clone());
+            token.add_error(err);
+            token
+        })
+        .boxed()
+}
 
-
-pub fn identifier<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<String>> {
+pub fn identifier<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, String>> {
     any().try_map(
         |item: TokenItem<'src>, span| {
             if let TokenType::Identifier(id) = item.token.ty {
@@ -30,7 +45,7 @@ pub fn identifier<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<S
     )
 }
 
-pub fn terminal<'src>() -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<TerminalToken>> {
+pub fn terminal<'src>() -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, TerminalToken>> {
     any().try_map(
         |item: TokenItem<'src>, span| {
             if let TokenType::Terminal(token) = item.token.ty {
@@ -47,10 +62,10 @@ pub fn terminal<'src>() -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<Ter
 }
 pub fn accept<'src, T: Expectable>(
     token: T,
-    parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
-) -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> {
+    parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
+) -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> {
     parser.filter(
-        move |item: &Parsed<T>| {
+        move |item: &Parsed<'src, T>| {
             item.item.matches(&token)
         },
     )
@@ -59,9 +74,9 @@ pub fn accept<'src, T: Expectable>(
 /// Allows the match to pass, if this IS a terminal, but not the expected
 pub fn expect_terminal<'src>(
     token: TerminalToken,
-) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<TerminalToken>> {
+) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, TerminalToken>> {
     terminal().map(
-        move |mut item: Parsed<TerminalToken>| {
+        move |mut item: Parsed<'src, TerminalToken>| {
             item.expect(vec![token]);
             item
         },
@@ -69,25 +84,38 @@ pub fn expect_terminal<'src>(
 }
 
 pub fn expect_match<'src, T: Expectable + Clone> (
-    parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+    parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
     expected: Vec<T>,
-) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<T>> 
+) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, T>> 
 where
 {
     parser.map(
-        move |mut item: Parsed<T>| {
+        move |mut item: Parsed<'src, T>| {
             item.expect(expected.clone());
             item
         },
     ).boxed()
 }
+pub fn token<'src>() -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, TokenItem<'src>>> {
+    any().map(
+        |item: TokenItem<'src>| {
+            Parsed {
+                range: SimpleSpan::from(item.token.range.clone()),
+                item,
+                polluted: 0,
+                errors: vec![],
+            }
+        }
+    ).boxed()
+}
+
 
 
 pub fn then_expect<'src, T, V>(
-    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
     expected: Vec<V>,
-    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
-) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<T>, Option<Parsed<V>>)>
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, V>> + 'src,
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<'src, T>, Option<Parsed<'src, V>>)>
 where
     V: Expectable + Clone,
 {
@@ -106,10 +134,10 @@ where
 
 
 pub fn then_expect_named<'src, T, V>(
-    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
     expected: &'src str,
-    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
-) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<T>, Option<Parsed<V>>)> {
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, V>> + 'src,
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<'src, T>, Option<Parsed<'src, V>>)> {
     base_parser.then(second_parser.or_not())
     .map(move |(mut first, second)| {
         if let Some(mut second) = second {
@@ -122,11 +150,11 @@ pub fn then_expect_named<'src, T, V>(
     })
 }
 pub fn ending_or_default<'src, T, V: Clone>(
-    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Vec<Parsed<T>>> + 'src,
-    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Vec<Parsed<'src, T>>> + 'src,
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, V>> + 'src,
     expected: &'src str,
     default: V,
-) -> impl Parser<'src, &'src [TokenItem<'src>], (Vec<Parsed<T>>, Parsed<V>)> {
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Vec<Parsed<'src, T>>, Parsed<'src, V>)> {
     base_parser.then(second_parser.or_not())
         .map(move |(mut first, second)| {
             if let Some(second) = second {
@@ -140,15 +168,14 @@ pub fn ending_or_default<'src, T, V: Clone>(
                 (first, default_parsed)
             }
         })
-
 }
 
 pub fn ending_or_fn<'src, T, V>(
-    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Vec<Parsed<T>>> + 'src,
-    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Vec<Parsed<'src, T>>> + 'src,
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, V>> + 'src,
     expected: &'src str,
     default: impl Fn() -> V
-) -> impl Parser<'src, &'src [TokenItem<'src>], (Vec<Parsed<T>>, Parsed<V>)> {
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Vec<Parsed<'src, T>>, Parsed<'src, V>)> {
     base_parser.then(second_parser.or_not())
         .try_map(move |(mut first, second), span| {
             if let Some(second) = second {
@@ -171,11 +198,11 @@ pub fn ending_or_fn<'src, T, V>(
 
 
 pub fn then_or_default<'src, T, V: Clone>(
-    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
-    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<V>> + 'src,
+    base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
+    second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, V>> + 'src,
     expected: &'src str,
     default: V,
-) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<T>, Parsed<V>)> {
+) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<'src, T>, Parsed<'src, V>)> {
     base_parser.then(second_parser.or_not())
         .map(move |(mut first, second)| {
             if let Some(second) = second {
@@ -197,11 +224,11 @@ pub fn then_or_default<'src, T, V: Clone>(
 pub fn try_both<'src, 
 T: 'src,
 V: 'src,//Expectable explicitly refers to comparing against a set of expected, we dont need it for this which tests did it match
->(first_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src,
+>(first_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
     first_expected: &'src str,
-    second_parser: Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<V>>,
+    second_parser: Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, V>>,
     second_expected: &'src str,
-) -> impl Parser<'src, &'src [TokenItem<'src>], Result<(Parsed<T>, Option<Parsed<V>>), Parsed<V>>> {
+) -> impl Parser<'src, &'src [TokenItem<'src>], Result<(Parsed<'src, T>, Option<Parsed<'src, V>>), Parsed<'src, V>>> {
     let first_exists = first_parser.then(second_parser.clone().or_not()).map(
         move |(mut first, second)| {
             if let Some(mut second) = second {
@@ -231,13 +258,13 @@ V: 'src,//Expectable explicitly refers to comparing against a set of expected, w
 /// You may be asking yourself "Isnt this literally the opposite of what a peg is meant to be".
 /// Shut up nerd
 pub fn choose_best<'src, T: Expectable + Clone>(
-    parsers: Vec<impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> + 'src>,
-) -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<T>> {
+    parsers: Vec<impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src>,
+) -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> {
     custom(
         move |inputref: &mut InputRef<_, _>| {
             let save = inputref.save();
             let mut best_position = inputref.save();
-            let mut best: Option<Parsed<T>> = None;
+            let mut best: Option<Parsed<'src, T>> = None;
             for parser in &parsers {
                 if let Ok(result) = inputref.parse(parser) {
                     if let Some(ref best_result) = best {

@@ -8,7 +8,7 @@ name = "preprocessor_parser"
 path = "src/lib.rs" 
 
 [dependencies]
-sqparse = { path = "../../sqparse_preproc/sqparse" }
+sqparse = { path = "../../sqparse_errec/sqparse" }
 chumsky = "0.10.1"
 parse_common = { path = "../../parse_common" }
 paste = "1.0.15"

@@ -3,8 +3,7 @@ use parse_common::errors::{ErrorRank, ParseError};
 use sqparse::TokenItem;
 
 pub struct PreprocessorErrorRank;
-impl ErrorRank for PreprocessorErrorRank {
-}
+impl ErrorRank for PreprocessorErrorRank {}
 impl PreprocessorErrorRank {
     pub fn unmatched_directive() -> usize {
         4
@@ -14,17 +13,18 @@ impl PreprocessorErrorRank {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum PreprocessorError<'src> {
     UnmatchedDirective(TokenItem<'src>),
     UnexpectedToken(TokenItem<'src>),
 }
 
-impl ParseError for PreprocessorError<'static> {
+impl ParseError for PreprocessorError<'_> {
     fn rank(&self) -> usize {
         match self {
-            PreprocessorError::UnmatchedDirective(_) => PreprocessorErrorRank::unmatched_directive(),
+            PreprocessorError::UnmatchedDirective(_) => {
+                PreprocessorErrorRank::unmatched_directive()
+            }
             PreprocessorError::UnexpectedToken(_) => PreprocessorErrorRank::unexpected_token(),
         }
     }
@@ -38,15 +38,21 @@ impl ParseError for PreprocessorError<'static> {
 
     fn text(&self) -> String {
         match self {
-            PreprocessorError::UnmatchedDirective(token) => format!("Unmatched directive: {}", token.token.ty),
-            PreprocessorError::UnexpectedToken(token) => format!("Unexpected token: {}", token.token.ty),
+            PreprocessorError::UnmatchedDirective(token) => {
+                format!("Unmatched directive: {}", token.token.ty)
+            }
+            PreprocessorError::UnexpectedToken(token) => {
+                format!("Unexpected token: {}", token.token.ty)
+            }
         }
     }
 
     fn range(&self) -> chumsky::prelude::SimpleSpan {
         match self {
-            PreprocessorError::UnmatchedDirective(token) | PreprocessorError::UnexpectedToken(token) => 
-            SimpleSpan::from(token.token.range.clone())
+            PreprocessorError::UnmatchedDirective(token)
+            | PreprocessorError::UnexpectedToken(token) => {
+                SimpleSpan::from(token.token.range.clone())
+            }
         }
     }
 }

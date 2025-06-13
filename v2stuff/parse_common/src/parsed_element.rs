@@ -1,16 +1,21 @@
 use std::{cmp::max, collections::HashMap, default, fmt::{Debug, Display}, iter::Map};
 
 use chumsky::span::SimpleSpan;
-use sqparse::token::TerminalToken;
+use sqparse::{token::TerminalToken, TokenItem};
 
 use crate::errors::{expected::Expected, substitute::Substituted, DefaultErrorRank, ErrorRank, ParseError};
 
 pub trait StringToken {
-    fn as_string(&self) -> &str;
+    fn as_string(&self) -> String;
 }
 impl StringToken for TerminalToken {
-    fn as_string(&self) -> &str {
-        self.as_str()
+    fn as_string(&self) -> String {
+        self.as_str().to_string()
+    }
+}
+impl StringToken for TokenItem<'_> {
+    fn as_string(&self) -> String {
+        self.token.ty.to_string()
     }
 }
 
@@ -34,65 +39,74 @@ pub trait Visitable {
         }
     }
 }
-pub trait ParseVisitable : Sized{
+pub trait ParseVisitable<'src>: Sized + 'src {
     fn visit_parse_children(
-        &self,
-        function: &mut impl FnMut(&Parsed<Self>),
-        pre_visit: &mut impl FnMut(&Parsed<Self>) -> bool,
+        &'src self,
+        function: &mut impl FnMut(&'src Parsed<'src, Self>),
+        pre_visit: &mut impl FnMut(&'src Parsed<'src, Self>) -> bool,
     );
-    fn visit_parse(this: &Parsed<Self>, function: &mut impl FnMut(&Parsed<Self>), pre_visit: &mut impl FnMut(&Parsed<Self>) -> bool) {
-        if(pre_visit(this)) {
+    fn visit_parse(
+        this: &'src Parsed<'src, Self>,
+        function: &mut impl FnMut(&'src Parsed<'src, Self>),
+        pre_visit: &mut impl FnMut(&'src Parsed<'src, Self>) -> bool,
+    ) {
+        if pre_visit(this) {
             this.item.visit_parse_children(function, pre_visit);
             function(this);
         }
     }
-    fn get_errors(this: &Parsed<Self>) -> Vec<Box<dyn ParseError>> {
+    fn get_errors(this: &'src Parsed<'src, Self>) -> Vec<Box<dyn ParseError + 'src>> {
         this.errors.clone()
     }
 }
 
 
-#[derive(Debug, PartialEq)]
-pub struct Parsed<T>{
+#[derive(Debug, Clone)]
+pub struct Parsed<'src, T>{
     pub range: SimpleSpan,
     pub item: T,
     pub polluted: usize, // Worst match that has occured (0 is perfect)
-    pub errors: Vec<Box<dyn ParseError>>,
+    pub errors: Vec<Box<dyn ParseError + 'src>>,
+}
+impl<T: PartialEq> PartialEq for Parsed<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.range == other.range && self.item == other.item && self.polluted == other.polluted
+    }
 }
 
 
-impl<T> Parsed<T> where T: ParseVisitable {
-    pub fn find_errors(&self) -> Vec<Box<dyn ParseError>> {
-        let mut errs: Vec<Box<dyn ParseError + 'static>> = vec![];
+impl<'src, T> Parsed<'src, T> where T: ParseVisitable<'src> {
+    pub fn find_errors(&'src self) -> Vec<Box<dyn ParseError + 'src>> {
+        let mut errs: Vec<Box<dyn ParseError + 'src>> = vec![];
         self.visit_parse_children(
-            &mut |e| errs.extend(e.find_errors()),
+            &mut |e: &'src Parsed<'src, T>| errs.extend(e.find_errors()),
             &mut |_| true,//This should not need to be mutable probably
         );
-        errs.extend(self.get_errors());
+        errs.extend(self.get_errors().clone());
         errs
     }
-    pub fn get_errors(&self) -> Vec<Box<dyn ParseError>> {
+    pub fn get_errors(&'src self) -> Vec<Box<dyn ParseError + 'src>> {
         T::get_errors(self)
     }
 }
-impl<T: ParseVisitable> Parsed<T> {
+impl<'src, T: ParseVisitable<'src>> Parsed<'src, T> {
     pub fn visit_parse_children(
-        &self,
-        function: &mut impl FnMut(&Parsed<T>),
-        pre_visit: &mut impl FnMut(&Parsed<T>) -> bool,
+        &'src self,
+        function: &mut impl FnMut(&'src Parsed<'src, T>),
+        pre_visit: &mut impl FnMut(&'src Parsed<'src, T>) -> bool,
     ) {
         self.item.visit_parse_children(function, pre_visit);
     }
     pub fn visit_parse(
-        &self,
-        function: &mut impl FnMut(&Parsed<T>),
-        pre_visit: &mut impl FnMut(&Parsed<T>) -> bool,
+        &'src self,
+        function: &mut impl FnMut(&'src Parsed<'src, T>),
+        pre_visit: &mut impl FnMut(&'src Parsed<'src, T>) -> bool,
     ) {
         T::visit_parse(self, function, pre_visit);
     }
 }
 
-impl<T> Parsed<T> {
+impl<'src, T> Parsed<'src, T> {
     pub fn new(range: SimpleSpan, item: T) -> Self {
         Parsed {
             range,
@@ -104,11 +118,11 @@ impl<T> Parsed<T> {
     pub fn pollute_from(&mut self, from: &[&dyn CascadePollution]) {
         self.polluted = from.iter().map(|e| e.pollution()).max().unwrap_or(self.polluted);
     }
-    pub fn add_error<E: ParseError>(&mut self, error: E) {
+    pub fn add_error<E: ParseError + 'src>(&mut self, error: E) {
         self.polluted = max(self.polluted, error.rank());
         self.errors.push(Box::new(error));
     }
-    pub fn map_item<V, F: FnOnce(T) -> V>(self, f: F) -> Parsed<V> {
+    pub fn map_item<V, F: FnOnce(T) -> V>(self, f: F) -> Parsed<'src, V> {
         Parsed {
             range: self.range,
             item: f(self.item),
@@ -117,7 +131,7 @@ impl<T> Parsed<T> {
         }
     }
 }
-impl<T: Expectable + Clone> Parsed<T> {
+impl<'src, T: Expectable + Clone> Parsed<'src, T> {
     pub fn expect(&mut self, expected: Vec<T>) {
         if !expected.iter().any(|e| e.matches(&self.item)) {
             let error = Expected{
@@ -162,7 +176,7 @@ impl<T: Expectable + Clone> Substitute<T> {
     }
 }
 
-impl<T: Expectable + Clone> Parsed<T> {
+impl<'src, T: Expectable + Clone> Parsed<'src, T> {
     pub fn substitute(
         &mut self,
         map: Vec<Substitute<T>>,
