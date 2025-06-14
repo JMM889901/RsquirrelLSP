@@ -137,7 +137,7 @@ impl<'src, T: Expectable + Clone> Parsed<'src, T> {
             let error = Expected{
                 got: self.item.clone(),
                 expected,
-                range: self.range.clone(),
+                range: self.range,
             };
             self.add_error(error);
         }

@@ -1,0 +1,12 @@
+[package]
+name = "predictor"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "predictor"
+path = "src/lib.rs" 
+
+[dependencies]
+sqparse = { path = "../../sqparse_errec/sqparse" }
+preprocessor_parser = { path = "../preprocessor_parser" }

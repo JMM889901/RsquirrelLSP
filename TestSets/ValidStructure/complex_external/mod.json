@@ -1,5 +1,5 @@
 {
-	"Name" : "LSPTest",
+	"Name" : "ComplexExternal",
 	"Version": "0.1.0",
 	"LoadPriority": 5,
 	"Scripts": [

@@ -2,17 +2,15 @@ use crate::{grammar::branch::branch, statements::PreprocessorExpression};
 use chumsky::{
     prelude::{any, choice, recursive, via_parser},
     span::{SimpleSpan, Span},
-    Boxed, IterParser, Parser,
+    IterParser, Parser,
 };
 use parse_common::{
-    accept, ending_or_default, ending_or_fn,
-    errors::{unknown::UnexpectedToken, ErrorRank, ParseError},
-    fallback, identifier,
-    parsed_element::{default_parsed, ParseVisitable, Parsed, Substitute, Visitable},
-    terminal, then_expect, then_expect_named, then_or_default, try_both,
+    errors::ParseError,
+    fallback,
+    parsed_element::{ParseVisitable, Parsed},
+    terminal,
 };
 use sqparse::{
-    ast::Identifier,
     token::{TerminalToken, TokenType},
     TokenItem,
 };
@@ -48,21 +46,13 @@ impl<'src> ParseVisitable<'src> for PreprocessorAST<'src> {
         pre_visit: &mut impl FnMut(&'src Parsed<'src, Self>) -> bool,
     ) {
         match self {
-            PreprocessorAST::If {
-                condition,
-                body,
-                ends,
-            } => {
+            PreprocessorAST::If { body, ends, .. } => {
                 for item in body {
                     item.visit_parse(function, pre_visit);
                 }
                 ends.visit_parse(function, pre_visit);
             }
-            PreprocessorAST::ElseIf {
-                condition,
-                body,
-                ends,
-            } => {
+            PreprocessorAST::ElseIf { body, ends, .. } => {
                 for item in body {
                     item.visit_parse(function, pre_visit);
                 }
@@ -80,16 +70,8 @@ impl<'src> ParseVisitable<'src> for PreprocessorAST<'src> {
     }
     fn get_errors(this: &'src Parsed<'src, Self>) -> Vec<Box<dyn ParseError + 'src>> {
         let mut child_errs = match &this.item {
-            PreprocessorAST::If {
-                condition,
-                body,
-                ends,
-            } => condition.find_errors(),
-            PreprocessorAST::ElseIf {
-                condition,
-                body,
-                ends,
-            } => condition.find_errors(),
+            PreprocessorAST::If { condition, .. } => condition.find_errors(),
+            PreprocessorAST::ElseIf { condition, .. } => condition.find_errors(),
             _ => vec![],
         };
         child_errs.extend(this.errors.clone());
@@ -142,29 +124,6 @@ pub fn preprocessor_parser<'src>(
         .repeated()
         .collect::<Vec<_>>()
         .boxed()
-}
-
-fn old_identifier<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], TokenItem<'src>> {
-    any().filter(|item: &TokenItem<'src>| matches!(item.token.ty, TokenType::Identifier(_)))
-}
-fn old_terminal<'src>(
-    token: TerminalToken,
-) -> Boxed<'src, 'src, &'src [TokenItem<'src>], TokenItem<'src>> {
-    any()
-        .filter(
-            move |item: &TokenItem| matches!(item.token.ty, TokenType::Terminal(t) if t == token),
-        )
-        .boxed()
-}
-fn old_logical_op<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], TokenItem<'src>> {
-    any().filter(|item: &TokenItem<'src>| {
-        matches!(
-            item.token.ty,
-            TokenType::Terminal(TerminalToken::LogicalAnd)
-                | TokenType::Terminal(TerminalToken::LogicalOr)
-                | TokenType::Terminal(TerminalToken::Not)
-        )
-    })
 }
 
 #[cfg(test)]
