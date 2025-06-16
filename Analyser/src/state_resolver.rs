@@ -78,7 +78,7 @@ impl CompiledState{
         //Now determine if all keys have a negation
     }
     pub fn try_resolve(&self, sets: &Vec<CompiledState>) -> Vec<CompiledState> {
-                let newsets = sets.iter().filter_map(|set|{
+        let newsets = sets.iter().filter_map(|set|{
             self.differing_keys(set)
         });
         

@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use chumsky::span::SimpleSpan;
 
-use crate::{errors::{substitute, DefaultErrorRank, ErrorLevel, ErrorRank, ParseError}, parsed_element::StringToken};
+use crate::{errors::{DefaultErrorRank, ErrorLevel, ErrorRank, ParseError}, parsed_element::StringToken};
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]

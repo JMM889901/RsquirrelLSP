@@ -1,9 +1,7 @@
 
-use std::{cmp::{self, max}, fmt::Display};
 
-use chumsky::{extra::Err, input::InputRef, label::LabelError, prelude::*, Boxed, Parser};
-use sqparse::{ast::Identifier, token::{TerminalToken, Token, TokenType}, TokenItem};
-use chumsky::DefaultExpected;
+use chumsky::{input::InputRef, prelude::*, Boxed, Parser};
+use sqparse::{token::{TerminalToken, TokenType}, TokenItem};
 
 use crate::{errors::{expected::{ExpectedArbitary, ExpectedNoMatch}, unknown::UnexpectedToken}, parsed_element::{Expectable, Parsed}};
 
@@ -122,7 +120,7 @@ where
     base_parser.
     then(expect_match(second_parser, expected.clone()).or_not())
     .map(move |(mut first, second)| {
-        if let Some(mut second) = second {
+        if let Some(second) = second {
             (first, Some(second))
         } else {
             let err = ExpectedNoMatch::new(expected.clone(), first.range.start);
@@ -140,7 +138,7 @@ pub fn then_expect_named<'src, T, V>(
 ) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<'src, T>, Option<Parsed<'src, V>>)> {
     base_parser.then(second_parser.or_not())
     .map(move |(mut first, second)| {
-        if let Some(mut second) = second {
+        if let Some(second) = second {
             (first, Some(second))
         } else {
             let err = ExpectedArbitary::new(expected.to_string(), first.range.start);
@@ -177,13 +175,13 @@ pub fn ending_or_fn<'src, T, V>(
     default: impl Fn() -> V
 ) -> impl Parser<'src, &'src [TokenItem<'src>], (Vec<Parsed<'src, T>>, Parsed<'src, V>)> {
     base_parser.then(second_parser.or_not())
-        .try_map(move |(mut first, second), span| {
+        .try_map(move |(mut first, second), _| {
             if let Some(second) = second {
                 Ok((first, second))
             } else {
                 let mut default_parsed = Parsed::new(first.last().map(|x| x.range).unwrap(), default());
                 let err = ExpectedArbitary::new(expected.to_string(), first.last().map_or_else(|| 0, |x| x.range.start));
-                if let Some(last) = first.last_mut() {
+                if first.last_mut().is_some() {
                     //last.add_error(err.clone());
                 } else {
                     return Err(EmptyErr::default());//We matched rule 1 0 times and didnt match rule 2, so presumably nothing matched
@@ -216,8 +214,7 @@ pub fn then_or_default<'src, T, V: Clone>(
         })
 }
 
-
-
+type AndMaybe<'src, T, V> = (Parsed<'src, T>, Option<Parsed<'src, V>>);
 
 //Try both, if both exists match, if one exists match and register the error, fail if neither
 //This is really quite pricy, honestly not sure if its worth it over traditional "skip until the error goes away" recovery
@@ -228,10 +225,10 @@ V: 'src,//Expectable explicitly refers to comparing against a set of expected, w
     first_expected: &'src str,
     second_parser: Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, V>>,
     second_expected: &'src str,
-) -> impl Parser<'src, &'src [TokenItem<'src>], Result<(Parsed<'src, T>, Option<Parsed<'src, V>>), Parsed<'src, V>>> {
+) -> impl Parser<'src, &'src [TokenItem<'src>], Result<AndMaybe<'src, T, V>, Parsed<'src, V>>> {
     let first_exists = first_parser.then(second_parser.clone().or_not()).map(
         move |(mut first, second)| {
-            if let Some(mut second) = second {
+            if let Some(second) = second {
                 Ok((first, Some(second)))
             } else {
                 let err = ExpectedArbitary::new(second_expected.to_string(), first.range.start);
@@ -248,7 +245,6 @@ V: 'src,//Expectable explicitly refers to comparing against a set of expected, w
         }
     );
     first_exists.or(second_exists)
-        .boxed()
 }
 
 

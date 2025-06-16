@@ -1,4 +1,4 @@
-use std::{cmp::max, collections::HashMap, default, fmt::{Debug, Display}, iter::Map};
+use std::{cmp::max, fmt::Debug};
 
 use chumsky::span::SimpleSpan;
 use sqparse::{token::TerminalToken, TokenItem};
@@ -33,7 +33,7 @@ pub trait Visitable {
         pre_visit: &mut impl FnMut(&Self) -> bool,
     );
     fn visit(&self, function: &mut impl FnMut(&Self), pre_visit: &mut impl FnMut(&Self) -> bool) {
-        if(pre_visit(self)) {
+        if pre_visit(self) {
             self.visit_children(function, pre_visit);
             function(self);
         }
@@ -131,7 +131,7 @@ impl<'src, T> Parsed<'src, T> {
         }
     }
 }
-impl<'src, T: Expectable + Clone> Parsed<'src, T> {
+impl<T: Expectable + Clone> Parsed<'_, T> {
     pub fn expect(&mut self, expected: Vec<T>) {
         if !expected.iter().any(|e| e.matches(&self.item)) {
             let error = Expected{
@@ -176,7 +176,7 @@ impl<T: Expectable + Clone> Substitute<T> {
     }
 }
 
-impl<'src, T: Expectable + Clone> Parsed<'src, T> {
+impl<T: Expectable + Clone> Parsed<'_, T> {
     pub fn substitute(
         &mut self,
         map: Vec<Substitute<T>>,

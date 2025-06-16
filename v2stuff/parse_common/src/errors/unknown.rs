@@ -1,5 +1,4 @@
-use chumsky::{error::Error, span::SimpleSpan};
-use sqparse::TokenItem;
+use chumsky::span::SimpleSpan;
 use std::fmt::{Debug, Display};
 use crate::{errors::{DefaultErrorRank, ErrorLevel, ErrorRank, ParseError}, parsed_element::StringToken};
 

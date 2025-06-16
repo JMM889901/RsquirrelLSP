@@ -142,7 +142,7 @@ mod testing {
         let parsed = expression_parser().parse(&tokens).unwrap();
         println!("Parsed Expression: {:#?}", parsed);
 
-        let test_text = "#if SERVER && CLIENT && (MP || DEV)
+        let test_text = "#if SERVER && CLIENT & (MP | DEV)
             #if DEV
             int y = 3;
             #else
