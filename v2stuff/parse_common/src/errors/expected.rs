@@ -25,7 +25,7 @@ impl<T> ExpectedNoMatch<T> {
 
 
 
-impl<T: StringToken + std::fmt::Debug + Clone + Send + Sync + 'static> ParseError for Expected<T> {
+impl<T: StringToken + std::fmt::Debug + Clone + Send + Sync> ParseError for Expected<T> {
     fn rank(&self) -> usize {
         DefaultErrorRank::expected()
     }
@@ -51,7 +51,7 @@ impl<T: StringToken + std::fmt::Debug + Clone + Send + Sync + 'static> ParseErro
     }
 }
 
-impl<T: StringToken + std::fmt::Debug + Clone + Send + Sync + 'static> ParseError for ExpectedNoMatch<T> {
+impl<T: StringToken + std::fmt::Debug + Clone + Send + Sync> ParseError for ExpectedNoMatch<T> {
     fn rank(&self) -> usize {
         DefaultErrorRank::expected()
     }

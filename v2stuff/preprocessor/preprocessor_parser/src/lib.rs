@@ -1,8 +1,9 @@
+use core::borrow;
+use std::{fmt::format, sync::Arc};
+
 use crate::{grammar::branch::branch, statements::PreprocessorExpression};
 use chumsky::{
-    prelude::{any, choice, recursive, via_parser},
-    span::{SimpleSpan, Span},
-    IterParser, Parser,
+    container::{Container, Seq}, prelude::{any, choice, recursive, via_parser}, span::{SimpleSpan, Span}, IterParser, Parser
 };
 use parse_common::{
     errors::ParseError,
@@ -18,6 +19,8 @@ use sqparse::{
 pub mod errors;
 pub mod grammar;
 pub mod statements;
+
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PreprocessorAST<'src> {
@@ -36,7 +39,7 @@ pub enum PreprocessorAST<'src> {
         ends: Box<Parsed<'src, PreprocessorAST<'src>>>,
     },
     EndIf,
-    Block(Vec<TokenItem<'src>>),
+    Block(Arc<Vec<TokenItem<'src>>>),
     Error,
 }
 impl<'src> ParseVisitable<'src> for PreprocessorAST<'src> {
@@ -112,7 +115,7 @@ fn body<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, Prepr
             let end = items.last().unwrap().token.range.end;
             Parsed::new(
                 SimpleSpan::new((), start..end),
-                PreprocessorAST::Block(items),
+                PreprocessorAST::Block(Arc::new(items)),
             )
         })
 }
@@ -123,8 +126,62 @@ pub fn preprocessor_parser<'src>(
         .recover_with(via_parser(fallback(PreprocessorAST::Error)))
         .repeated()
         .collect::<Vec<_>>()
+        .map(|x| x.into_iter().fold(
+            Vec::new(),
+            |mut acc, mut item| {
+                //Why god
+                if let PreprocessorAST::Block(_) = &item.item {
+                    if let Some(last) = acc.last() {
+                        let last: &Parsed<'_, PreprocessorAST<'_>> = last;
+                        item.range.start = last.range.end;
+                    }
+                }
+                acc.push(item);
+                acc
+            },
+
+        ))
         .boxed()
 }
+
+//I am so done with lifetimes holy shit
+//Genuinely these suck, somehow this is more annoying that just borrow checker bullshit
+pub fn parse_expression_static(
+    text: String,
+) -> Result<Parsed<'static, PreprocessorExpression<'static>>, String> {
+    let leaked_text: &'static str = Box::leak(text.into_boxed_str());//Mem leak?
+    let tokens = sqparse::tokenize(leaked_text, sqparse::Flavor::SquirrelRespawn).into_tokens();
+    let leaked_tokens: &'static [TokenItem<'static>] = Box::leak(tokens.into_boxed_slice());//Mem leak?
+    let parser = crate::grammar::expression::expression_parser();
+    let parsed = parser.parse(leaked_tokens);
+    if parsed.has_output() {
+        return Ok(parsed.into_output().unwrap());
+    }
+    Err("Failed to parse expression".into())
+}
+
+pub fn parse_expression<'a>(
+    tokens: &'a [TokenItem<'a>],
+) -> Result<Parsed<'a, PreprocessorExpression<'a>>, String> {
+    let parser = crate::grammar::expression::expression_parser();
+    let parsed: chumsky::ParseResult<Parsed<'a, PreprocessorExpression<'a>>, chumsky::prelude::EmptyErr> = parser.parse(tokens);
+    if parsed.has_output() {
+        return Ok(parsed.into_output().unwrap());
+    }
+    Err(format!("Failed to parse expression: {:?}", tokens))
+}
+pub fn preprocess<'a>(
+    tokens: &'a [TokenItem<'a>],
+) -> Result<PreprocessedAST<'a>, String> {
+    let parser = preprocessor_parser();
+    let parsed = parser.parse(tokens);
+    if parsed.has_output(){
+        return Ok(parsed.into_output().unwrap());
+    }
+    Err("Failed to parse preprocessor directives".into())
+}
+
+pub type PreprocessedAST<'a> = Vec<Parsed<'a, PreprocessorAST<'a>>>;
 
 #[cfg(test)]
 mod testing {

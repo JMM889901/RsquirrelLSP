@@ -51,11 +51,19 @@ pub fn combinator_then<'src>(
     >,
 ) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, PreprocessorExpression<'src>>> {
     //Jesus christ
-    identifier()
+    let ident = identifier().map(|item| item.map_item(PreprocessorExpression::Identifier));
+    let bracketed = accept(TerminalToken::OpenBracket, terminal())
+            .then(then_expect(recursive.clone(), vec![TerminalToken::CloseBracket], terminal()))
+            .map(|(mut start, (inner, end))| {
+                let end = default_parsed(end, TerminalToken::CloseBracket, inner.range);
+                start.range.end = end.range.end;
+                start.map_item(|_| PreprocessorExpression::Bracketed(Box::new(inner)))
+            });
+    ident.or(bracketed)
         .then(
             //try_both(combinator_parser(), "Combinator",
             //    recursive, "Expression").map(|result| {
-            then_expect_named(combinator_parser(), "Expression", recursive).map(|(left, right)| {
+            then_expect_named(combinator_parser(), "Expression", recursive).map(|(comb, right)| {
                 /*match result{
                     Ok((left, right)) => {
                         let range = left.range;
@@ -65,12 +73,13 @@ pub fn combinator_then<'src>(
                         (Parsed::new(right.range, TerminalToken::LogicalAnd), right)
                     }
                 }*/
-                let right = default_parsed(right, PreprocessorExpression::Placeholder, left.range);
-                (left, right)
+                let right = default_parsed(right, PreprocessorExpression::Placeholder, comb.range);
+                
+                (comb, right)
             }),
         )
-        .map(|(left, (comb, expr))| {
-            let left = left.map_item(PreprocessorExpression::Identifier);
+        .map(|(left, (mut comb, expr))| {
+            comb.range.end = expr.range.end;
             comb.map_item(|token| match token {
                 TerminalToken::LogicalAnd => {
                     PreprocessorExpression::And(Box::new(left), Box::new(expr))
@@ -101,8 +110,9 @@ pub fn expression_parser<'src>(
                 "Expression",
                 expr.clone(),
             )
-            .map(|(not, expr)| {
+            .map(|(mut not, expr)| {
                 let expr = default_parsed(expr, PreprocessorExpression::Placeholder, not.range);
+                not.range.end = expr.range.end;
                 Parsed::new(not.range, PreprocessorExpression::Not(Box::new(expr)))
             })
             .boxed(),
@@ -114,7 +124,7 @@ pub fn expression_parser<'src>(
                 ))
                 .map(|(mut start, (inner, end))| {
                     let end = default_parsed(end, TerminalToken::CloseBracket, inner.range);
-                    start.range.end = end.range.start;
+                    start.range.end = end.range.end;
                     start.map_item(|_| PreprocessorExpression::Bracketed(Box::new(inner)))
                 })
                 .boxed(),

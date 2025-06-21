@@ -17,7 +17,7 @@ impl<T: Display + Debug + Send + Sync> Display for Substituted<T> {
         write!(f, "Syntax Error: Substituted {} for {}, expected one of: {}", self.gave, self.got, self.expected.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))
     }
 }
-impl<T: StringToken + Debug + Send + Sync + 'static + std::clone::Clone> ParseError for Substituted<T> {
+impl<T: StringToken + Debug + Send + Sync + std::clone::Clone> ParseError for Substituted<T> {
     fn rank(&self) -> usize {
         DefaultErrorRank::substitute()
     }
@@ -49,7 +49,7 @@ impl<T: Display + Debug + Send + Sync> Display for Defaulted<T> {
         write!(f, "Syntax Error: Defaulted {} for expected one of: {}", self.gave, self.expected.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))
     }
 }
-impl<T: StringToken + Debug + Send + Sync + 'static + std::clone::Clone> ParseError for Defaulted<T> {
+impl<T: StringToken + Debug + Send + Sync + std::clone::Clone> ParseError for Defaulted<T> {
     fn rank(&self) -> usize {
         DefaultErrorRank::substitute()
     }

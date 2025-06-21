@@ -119,7 +119,7 @@ impl ModLoader {
                     let file = FileInfo::new(
                         //I'm not sure why i even really track this
                         to_load.get_name(),
-                        m.mod_path.join(&to_load.rel_path),
+                        m.script_path.join(&to_load.rel_path),
                         to_load.run_on.clone(),
                         ModID(*mod_idx),
                     );
@@ -149,30 +149,20 @@ impl ModLoader {
         self.find_mods(root_path.clone(), root_path, 0)
     }
 
-    /// Recursively search for mod.json and mod.rson files, up to the depth limit (currently hardcoded to 6)
+    /// Recursively search for mod.json and mod.rson files, up to the depth limit (currently hardcoded to 3)
     /// Returns the number of loaded mods
+    /// TODO: Warn the user if this takes longer than a few ms, this is very inefficient and doesnt really need to recurr
     fn find_mods(
         &mut self,
         root_path: PathBuf,
         current_path: PathBuf,
         depth: usize,
     ) -> Result<usize, ModLoadError> {
-        if depth > 6 {
+        if depth >= 3 {
             return Ok(0); // Prevent too deep recursion
         }
-
-        let dir = current_path.read_dir()?;
-        let mut loaded_count = 0;
-        for entry in dir {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_dir() {
-                // Recursively search in subdirectories
-                loaded_count += self.find_mods(root_path.clone(), path, depth + 1)?;
-            } else if path.file_name().is_some_and(|name| name == "mod.json") {
-                let mod_item = Mod::from_json(current_path.clone(), path)?;
-                loaded_count += 1;
+        if current_path.join("mod.json").exists() {
+                let mod_item = Mod::from_json(current_path.clone(), current_path.join("mod.json"))?;
                 if let Some(existing_mod) = self.get_mod(&mod_item.name) {
                     return Err(ModLoadError::DuplicateMods(
                         existing_mod.mod_path.clone(),
@@ -183,14 +173,25 @@ impl ModLoader {
                     .entry(mod_item.load_priority)
                     .or_default()
                     .push(mod_item);
-            } else if path.extension().is_some_and(|ext| ext == "rson") {
-                let mod_item = Mod::from_rson(current_path.clone(), path)?;
-                loaded_count += 1;
-                self.mods
-                    .entry(mod_item.load_priority)
-                    .or_default()
-                    .push(mod_item);
-            }
+                return Ok(1);
+        } else if current_path.join("scripts.rson").exists() {
+            let mod_item = Mod::from_rson(current_path.clone(), current_path.join("scripts.rson"))?;
+            self.mods
+                .entry(mod_item.load_priority)
+                .or_default()
+                .push(mod_item);
+            return Ok(1);
+        }
+        let dir = current_path.read_dir()?;
+        let mut loaded_count = 0;
+        for entry in dir {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                // Recursively search in subdirectories
+                loaded_count += self.find_mods(root_path.clone(), path, depth + 1)?;
+            } 
         }
         Ok(loaded_count)
     }

@@ -6,9 +6,8 @@ pub use crate::term::PreprocessorTerm;
 pub mod state;
 pub mod term;
 
-pub type AnalysisState = SortedVecState<ArcTerm>;//This is so close to being as fast as index term but is way more convenient
-pub type PreprocState = HashMapState<String>;
-
+pub type CompilerTerm = ArcTerm;
+pub type CompilerState = SortedVecState<ArcTerm>;//This is so close to being as fast as index term but is way more convenient
 
 
 #[cfg(test)]

@@ -679,6 +679,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "language_server"
+version = "0.1.0"
+dependencies = [
+ "compiler_state",
+ "mod_loader",
+ "parse_common",
+ "preprocessor",
+ "preprocessor_parser",
+ "rayon",
+ "rsquirrel_cli",
+ "serde",
+ "serde_json",
+ "sqparse",
+ "tokio",
+ "tower-lsp",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -872,12 +890,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
 name = "peg"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -952,16 +964,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "predictor"
+name = "preprocessor"
 version = "0.1.0"
 dependencies = [
+ "chumsky",
+ "compiler_state",
+ "mod_loader",
+ "parse_common",
  "preprocessor_parser",
  "sqparse",
 ]
-
-[[package]]
-name = "preprocessor"
-version = "0.1.0"
 
 [[package]]
 name = "preprocessor_parser"
@@ -969,7 +981,6 @@ version = "0.1.0"
 dependencies = [
  "chumsky",
  "parse_common",
- "paste",
  "sqparse",
 ]
 
@@ -1089,6 +1100,19 @@ checksum = "93411e420bcd1a75ddd1dc3caf18c23155eda2c090631a85af21ba19e97093b5"
 dependencies = [
  "smallvec",
  "str_indices",
+]
+
+[[package]]
+name = "rsquirrel_cli"
+version = "0.1.0"
+dependencies = [
+ "compiler_state",
+ "mod_loader",
+ "parse_common",
+ "preprocessor",
+ "preprocessor_parser",
+ "rayon",
+ "sqparse",
 ]
 
 [[package]]

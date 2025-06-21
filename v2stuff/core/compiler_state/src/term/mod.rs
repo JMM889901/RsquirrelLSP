@@ -4,6 +4,7 @@ pub mod index_term;
 pub mod arc_term;
 pub mod string_term;
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum CompareResult {
     Accept,
     Reject,
@@ -22,6 +23,10 @@ pub trait PreprocessorTerm: Sized + Clone {
     fn accepts(&self, other: &Self) -> bool {
         !matches!(self.compare(other), CompareResult::Reject)
     }
+    fn is_vm(&self) -> bool;
+
+    fn is_accept(&self) -> bool;
+    fn is_reject(&self) -> bool;
     fn not(&self) -> Self;
     
 }
@@ -31,13 +36,27 @@ pub trait PreprocessorTerm: Sized + Clone {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum KnownTerm {
     Identifier(String),
+    SomeImpossibleSecondOption,
     //I think there are more, i forgor
 }
 impl Display for KnownTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             KnownTerm::Identifier(id) => write!(f, "{}", id),
+            _ => { 
+                write!(f, "This is a debug thingy to make clippy shut up")
+            }
             // Add more cases as needed
+        }
+    }
+}
+impl KnownTerm {
+    pub fn is_vm(&self) -> bool {
+        match self {
+            KnownTerm::Identifier(id) => {
+                id == "SERVER" || id == "CLIENT" || id == "UI"
+            },
+            _ => false,
         }
     }
 }

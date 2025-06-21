@@ -29,10 +29,35 @@ impl PreprocessorTerm for ArcTerm {
             ArcTerm { term, truth: TermTruth::DontCare } => ArcTerm { term: term.clone(), truth: TermTruth::DontCare },
         }
     }
+    fn is_vm(&self) -> bool {
+        self.term.is_vm()
+    }
+    
+    fn is_accept(&self) -> bool {
+        self.truth == TermTruth::True
+    }
+    
+    fn is_reject(&self) -> bool {
+        self.truth == TermTruth::False
+    }
 }
 impl Display for ArcTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.truth, self.term)
+    }
+}
+impl ArcTerm {
+    pub fn new(term: String, truth: TermTruth) -> Self {
+        ArcTerm { term: Arc::new(KnownTerm::Identifier(term)), truth }
+    }
+    pub fn from_true(term: Arc<KnownTerm>) -> Self {
+        ArcTerm { term, truth: TermTruth::True }
+    }
+    pub fn from_false(term: Arc<KnownTerm>) -> Self {
+        ArcTerm { term, truth: TermTruth::False }
+    }
+    pub fn is_vm(&self) -> bool {
+        self.term.is_vm()
     }
 }
 

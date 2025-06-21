@@ -8,7 +8,7 @@ use std::{fmt::{Debug}};
 use chumsky::span::SimpleSpan;
 
 
-pub trait ErrorRank : 'static {
+pub trait ErrorRank {
     /// Using usize here just so you can arbitrarily rank these 
     /// No actual errors, should really just be used for formatting suggestions and such
     fn fine() -> usize {

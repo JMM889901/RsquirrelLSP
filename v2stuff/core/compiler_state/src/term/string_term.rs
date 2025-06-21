@@ -43,7 +43,20 @@ impl PreprocessorTerm for StringTerm {
             StringTerm { term, truth: TermTruth::DontCare } => StringTerm { term: term.clone(), truth: TermTruth::DontCare },
         }
     }
+    fn is_vm(&self) -> bool {
+        self.term == "SERVER" || self.term == "CLIENT" || self.term == "UI"
+    }
+    
+    fn is_accept(&self) -> bool {
+        self.truth == TermTruth::True
+    }
+    
+    fn is_reject(&self) -> bool {
+        self.truth == TermTruth::False
+    }
+
 }
+
 impl Display for StringTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.truth, self.term)

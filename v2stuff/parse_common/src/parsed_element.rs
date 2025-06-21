@@ -26,13 +26,13 @@ pub trait CascadePollution {
     }
     fn calculate_pollution(&self) -> usize;
 }
-pub trait Visitable {
+pub trait Visitable<'src> {
     fn visit_children(
-        &self,
-        function: &mut impl FnMut(&Self),
-        pre_visit: &mut impl FnMut(&Self) -> bool,
+        &'src self,
+        function: &mut impl FnMut(&'src Self),
+        pre_visit: &mut impl FnMut(&'src Self) -> bool,
     );
-    fn visit(&self, function: &mut impl FnMut(&Self), pre_visit: &mut impl FnMut(&Self) -> bool) {
+    fn visit(&'src self, function: &mut impl FnMut(&'src Self), pre_visit: &mut impl FnMut(&'src Self) -> bool) {
         if pre_visit(self) {
             self.visit_children(function, pre_visit);
             function(self);
@@ -57,6 +57,24 @@ pub trait ParseVisitable<'src>: Sized + 'src {
     }
     fn get_errors(this: &'src Parsed<'src, Self>) -> Vec<Box<dyn ParseError + 'src>> {
         this.errors.clone()
+    }
+}
+impl<'src, T: ParseVisitable<'src> + 'src> Visitable<'src> for T {
+    fn visit_children(
+        &'src self,
+        function: &mut impl FnMut(&'src Self),
+        pre_visit: &mut impl FnMut(&'src Self) -> bool,
+    ) {
+        self.visit_parse_children(
+            &mut |e: &Parsed<'src, Self>| function(&e.item),
+            &mut |e: &Parsed<'src, Self>| pre_visit(&e.item),
+        );
+    }
+    fn visit(&'src self, function: &mut impl FnMut(&'src Self), pre_visit: &mut impl FnMut(&'src Self) -> bool) {
+        if pre_visit(self) {
+            self.visit_children(function, pre_visit);
+            function(self);
+        }
     }
 }
 
@@ -130,8 +148,9 @@ impl<'src, T> Parsed<'src, T> {
             errors: self.errors,
         }
     }
+
 }
-impl<T: Expectable + Clone> Parsed<'_, T> {
+impl<'a, T: Expectable + Clone + 'a> Parsed<'a, T> {
     pub fn expect(&mut self, expected: Vec<T>) {
         if !expected.iter().any(|e| e.matches(&self.item)) {
             let error = Expected{
@@ -144,7 +163,7 @@ impl<T: Expectable + Clone> Parsed<'_, T> {
     }
 }
 
-pub trait Expectable : StringToken + Debug + Send + Sync + 'static{
+pub trait Expectable : StringToken + Debug + Send + Sync {
     fn matches(&self, item: &Self) -> bool;
 }
 impl Expectable for TerminalToken {
@@ -176,7 +195,7 @@ impl<T: Expectable + Clone> Substitute<T> {
     }
 }
 
-impl<T: Expectable + Clone> Parsed<'_, T> {
+impl<'a, T: Expectable + Clone + 'a> Parsed<'a, T> {
     pub fn substitute(
         &mut self,
         map: Vec<Substitute<T>>,

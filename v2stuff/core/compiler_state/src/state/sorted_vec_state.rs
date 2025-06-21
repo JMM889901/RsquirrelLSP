@@ -1,6 +1,6 @@
 use std::{fmt::{Debug, Display}, hash::Hash};
 
-use crate::{state::CompilerState, term::CompareResult, PreprocessorTerm};
+use crate::{state::CompilerState, term::{self, arc_term::ArcTerm, CompareResult}, PreprocessorTerm};
 
 //Sorted vec implementation
 #[derive(Debug, Clone)]
@@ -9,6 +9,7 @@ pub struct SortedVecState<T: PreprocessorTerm + std::hash::Hash>{
 }
 impl<T: PreprocessorTerm + std::hash::Hash + Ord + Debug> CompilerState<T> for SortedVecState<T> {
     type Key<'a> = &'a T where T: 'a;
+
     
     fn terms(&self) -> impl Iterator<Item = Self::Key<'_>> {
         self.terms.iter()
@@ -76,10 +77,47 @@ impl<T: PreprocessorTerm + std::hash::Hash + Ord + Debug> CompilerState<T> for S
     }
 
 }
+impl SortedVecState<ArcTerm> {
+    pub fn cmp_string(&self, other: &str) -> CompareResult {
+        // Compare the two states by their string representations
+        for term in &self.terms {
+            match term.term.to_string().as_str() {
+                s if s == other => {
+                    return match term.truth {
+                        crate::term::TermTruth::True => CompareResult::Accept,
+                        crate::term::TermTruth::False => CompareResult::Reject,
+                        crate::term::TermTruth::DontCare => CompareResult::DontCare,
+                    };
+                },
+                _ => continue,
+            }
+        }
+        CompareResult::DontCare
+    }
+}
 impl<T: PreprocessorTerm + Hash + Display> Display for SortedVecState<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let terms = self.terms.iter().map(|term| term.to_string()).collect::<Vec<_>>().join(" && ");
-        write!(f, "{}", terms)
+        let (vms, others): (Vec<_>, Vec<_>) = self.terms.iter().partition(|term| {
+            term.is_vm()
+        });
+        let terms = others.iter().map(|term| term.to_string()).collect::<Vec<_>>().join(" && ");
+        if vms.is_empty() {
+            return write!(f, "{}", terms);
+        }
+        let active_vm = vms.iter()
+            .find(|term| term.is_accept())
+            .map(|term| term.to_string())
+            .unwrap_or_else(|| "No active VM".to_string());
+        let inactive_vms = vms.iter()
+            .filter(|term| term.is_reject())
+            .map(|term| term.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if terms.is_empty() {
+            return write!(f, "{} ({})", active_vm, inactive_vms);
+        }
+
+        write!(f, "{} ({}) && {}", active_vm, inactive_vms, terms)
     }
 }
 impl<T: PreprocessorTerm + std::hash::Hash + Ord> SortedVecState<T> {

@@ -29,10 +29,10 @@ pub fn fallback<'src, T: Clone + 'src>(
 
 pub fn identifier<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, String>> {
     any().try_map(
-        |item: TokenItem<'src>, span| {
+        |item: TokenItem<'src>, _| {//I should look into using the builtin span, its based on the token index NOT the text range like token.range is 
             if let TokenType::Identifier(id) = item.token.ty {
                 return Ok(Parsed {
-                    range: span,
+                    range: item.token.range.clone().into(),
                     item: id.to_string(),
                     polluted: 0,
                     errors: vec![],
@@ -45,10 +45,10 @@ pub fn identifier<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<'
 
 pub fn terminal<'src>() -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, TerminalToken>> {
     any().try_map(
-        |item: TokenItem<'src>, span| {
+        |item: TokenItem<'src>, _| {//I should look into using the builtin span, its based on the token index NOT the text range like token.range is 
             if let TokenType::Terminal(token) = item.token.ty {
                 return Ok(Parsed {
-                    range: span,
+                    range: item.token.range.clone().into(),
                     item: token,
                     polluted: 0,
                     errors: vec![],
@@ -81,7 +81,7 @@ pub fn expect_terminal<'src>(
     ).boxed()
 }
 
-pub fn expect_match<'src, T: Expectable + Clone> (
+pub fn expect_match<'src, T: Expectable + Clone + 'src> (
     parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
     expected: Vec<T>,
 ) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, T>> 
@@ -109,7 +109,7 @@ pub fn token<'src>() -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, 
 
 
 
-pub fn then_expect<'src, T, V>(
+pub fn then_expect<'src, T, V: 'src>(
     base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
     expected: Vec<V>,
     second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, V>> + 'src,

@@ -1,0 +1,13 @@
+[package]
+name = "rsquirrel_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mod_loader =  { path = "../mod_loader" }
+compiler_state = { path = "../compiler_state" }
+parse_common = { path = "../../parse_common" }
+preprocessor = { path = "../../preprocessor/preprocessor" }
+preprocessor_parser = { path = "../../preprocessor/preprocessor_parser" }
+sqparse = { path = "../../sqparse_errec/sqparse" }
+rayon = "1.10.0"

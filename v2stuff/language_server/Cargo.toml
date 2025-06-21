@@ -1,0 +1,18 @@
+[package]
+name = "language_server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mod_loader =  { path = "../core/mod_loader" }
+compiler_state = { path = "../core/compiler_state" }
+rsquirrel_cli = { path = "../core/rsquirrel_cli" }
+parse_common = { path = "../parse_common" }
+preprocessor = { path = "../preprocessor/preprocessor" }
+preprocessor_parser = { path = "../preprocessor/preprocessor_parser" }
+sqparse = { path = "../sqparse_errec/sqparse" }
+rayon = "1.10.0"
+serde = "1.0.219"
+serde_json = "1.0.140"
+tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread", "io-std"] }
+tower-lsp = "0.20.0"

@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+compiler_state = { path = "../../core/compiler_state" }
+preprocessor_parser = { path = "../preprocessor_parser" }
+parse_common = { path = "../../parse_common" }
+mod_loader = { path = "../../core/mod_loader" }
+sqparse = { path = "../../sqparse_errec/sqparse" }
+chumsky = "0.10.1"

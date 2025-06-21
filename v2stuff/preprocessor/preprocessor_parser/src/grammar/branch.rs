@@ -1,3 +1,5 @@
+use core::panic;
+
 use chumsky::{
     prelude::{choice, recursive},
     Boxed, IterParser, Parser,
@@ -55,16 +57,28 @@ pub fn branch<'src>(
             end_preproc.map(|end| end.map_item(|_| PreprocessorAST::EndIf)),
             preproc_else
                 .then(end.clone())
-                .map(|(mut start, (body, end))| {
+                .map(|(start, (body, end))| {
+                    //This is just to make type signatures not get confused, because recursive
+                    let mut start: Parsed<TerminalToken> = start;
                     let end: Parsed<PreprocessorAST<'_>> = end;
+                    let mut body: Vec<Parsed<'_, PreprocessorAST<'_>>> = body;
+                    //TODO: This seems a bit sketchy, if i wind up with weird starts this is probably why
+                    if let Some(b) = body.first_mut() {
+                        b.range.start = start.range.end;
+                    }
                     start.range.end = end.range.start;
                     start.map_item(|_| PreprocessorAST::Else {
                         body,
                         ends: Box::new(end),
                     })
                 }),
-            elif.then(end).map(|((mut start, condition), (body, end))| {
+            elif.then(end).map(|((mut start, condition), (mut body, end))| {
+                if let Some(b) = body.first_mut() {
+                    b.range.start = condition.range.end;
+                }//I dont think i need to update last as well
+
                 start.range.end = end.range.start;
+
                 start.map_item(|_| PreprocessorAST::ElseIf {
                     condition,
                     body,
@@ -81,9 +95,12 @@ pub fn branch<'src>(
             "endif",
             || PreprocessorAST::EndIf,
         ))
-        .map(|((start, condition), (body, end))| {
+        .map(|((start, condition), (mut body, end))| {
             let mut start = start;
-            start.range.end = end.range.start;
+            if let Some(b) = body.first_mut() {
+                b.range.start = condition.range.end;
+            }
+            start.range.end = end.range.end;
             start.map_item(|_| PreprocessorAST::If {
                 condition,
                 body,

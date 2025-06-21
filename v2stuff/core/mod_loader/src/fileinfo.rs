@@ -24,7 +24,7 @@ impl ModScriptEntry {
             .unwrap_or_else(|| "This is less than ideal".to_string())
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LoadedFile {
     pub load_position: usize, //File's position in the overall load order
     pub file_type: FileType,
@@ -40,7 +40,7 @@ impl Display for LoadedFile {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FileType {
     Script,
     Externals(ExternalType),
@@ -53,7 +53,7 @@ pub struct SquirrelAmbiguiousFile {
 }
 pub struct SquirrelFile {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExternalType {
     Externals,
     NativeFuncs,
@@ -79,6 +79,11 @@ pub struct FileInfoInternal {
     pub preprocess_time: RwLock<std::time::Duration>,
     #[cfg(feature = "timed")]
     pub sq_parse_time: RwLock<std::time::Duration>,
+}
+impl PartialEq for FileInfo {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)//Look into what the optimal partial eq is for this, Not sure if i can actually guarantee this
+    }
 }
 impl Display for FileInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

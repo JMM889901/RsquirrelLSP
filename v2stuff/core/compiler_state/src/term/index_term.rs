@@ -20,6 +20,7 @@ impl TermMap {
 pub struct IndexTerm {
     pub term: usize,// Paired with a map of usize -> term, probably the cheapest implementation
     pub truth: TermTruth,
+    pub vm: bool, 
 }
 impl PreprocessorTerm for IndexTerm {
     fn compare(&self, other: &Self) -> super::CompareResult {
@@ -36,11 +37,24 @@ impl PreprocessorTerm for IndexTerm {
     }
     fn not(&self) -> Self {
         match self {
-            IndexTerm { term, truth: TermTruth::True } => IndexTerm { term: *term, truth: TermTruth::False },
-            IndexTerm { term, truth: TermTruth::False } => IndexTerm { term: *term, truth: TermTruth::True },
-            IndexTerm { term, truth: TermTruth::DontCare } => IndexTerm { term: *term, truth: TermTruth::DontCare },
+            IndexTerm { term, truth: TermTruth::True, vm } => IndexTerm { term: *term, truth: TermTruth::False, vm: *vm },
+            IndexTerm { term, truth: TermTruth::False, vm } => IndexTerm { term: *term, truth: TermTruth::True, vm: *vm },
+            IndexTerm { term, truth: TermTruth::DontCare, vm } => IndexTerm { term: *term, truth: TermTruth::DontCare, vm: *vm },
         }
     }
+    fn is_vm(&self) -> bool {
+        self.vm// Bit sketch
+    }
+    
+    fn is_accept(&self) -> bool {
+        self.truth == TermTruth::True
+    }
+    
+    fn is_reject(&self) -> bool {
+        self.truth == TermTruth::False
+    }
+    
+
 }
 impl IndexTerm {
     pub fn display(&self, map: &TermMap) -> String {
@@ -95,14 +109,17 @@ pub fn generate_map(terms: Vec<Vec<String>>) -> TermMap {
     }
     TermMap { map: dedup }
 }
+pub fn is_vm(term: &str) -> bool {
+    term == "SERVER" || term == "CLIENT" || term == "UI"
+}
 
 pub fn to_idx_term(term: &str, map: &TermMap) -> IndexTerm {
     if let Some(rest) = term.strip_prefix('!') {
-        IndexTerm { term: map.get_index(rest).unwrap(), truth: TermTruth::False }
+        IndexTerm { term: map.get_index(rest).unwrap(), truth: TermTruth::False, vm: is_vm(rest) }
     } else if let Some(rest) = term.strip_prefix('?') {
-        IndexTerm { term: map.get_index(rest).unwrap(), truth: TermTruth::DontCare }
+        IndexTerm { term: map.get_index(rest).unwrap(), truth: TermTruth::DontCare, vm: is_vm(rest) }
     } else {
-        IndexTerm { term: map.get_index(term).unwrap(), truth: TermTruth::True }
+        IndexTerm { term: map.get_index(term).unwrap(), truth: TermTruth::True, vm: is_vm(term) }
     }
 }
 
