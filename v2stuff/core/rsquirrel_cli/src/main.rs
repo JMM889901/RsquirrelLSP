@@ -1,9 +1,5 @@
-use core::error;
-use std::{env, path::PathBuf};
-use rayon::prelude::*;
-use mod_loader::{fileinfo::{FileInfo, LoadedFile}, LoadConfig, ModID, ModLoader};
-use preprocessor_parser::preprocessor_parser;
-
+use std::{env};
+///TODO SIKE THIS IS JUST E2Es AGAIN, I CAN'T KEEP GETTING AWAY WITH THIS
 fn main() {
     let args: Vec<String> = env::args().collect();
     todo!()
@@ -11,18 +7,39 @@ fn main() {
 
 #[cfg(test)]
 mod tests{
-    use core::panic;
+    use rayon::prelude::*;
+    use std::{collections::HashMap, path::PathBuf};
 
-    use compiler_state::term;
-    use mod_loader::fileinfo::FileType;
+    use mod_loader::{fileinfo::{FileInfo, FileType, LoadedFile}, mods::Mod, LoadConfig, ModLoader};
 
-    use super::*;
+
+
+#[test]
+fn test_scuffed_paths() {
+    //Because northstar has a single file which it loads with a leading / for no reason >:(
+    let path = PathBuf::from("../../../../northstar/Northstar.CustomServers/mod/scripts/vscripts/");
+    let good_join = "ai/_ai_turret_sentry.gnut";
+    let join = "/ai/_ai_turret_sentry.gnut";
+    let joined = path.join(join);
+    assert!(!joined.exists(), "Joined path should not currently exist: {:?}", joined);
+    let joined = path.join(good_join);
+    assert!(joined.exists(), "Joined path should exist: {:?}", joined);
+
+
+    let fixed = join.strip_prefix("/").unwrap_or(join);
+    let fixed_joined = path.join(fixed);
+    assert!(fixed_joined.exists(), "Fixed joined path should exist: {:?}", fixed_joined);
+    println!("Fixed joined path: {:?}", fixed_joined);
+    let good_fixed = good_join.strip_prefix("/").unwrap_or(good_join);
+    assert_eq!(good_fixed, good_join);
+}
+
 #[test]
 fn test_northstar() {
     let mut loader = ModLoader::new();
     //let path = PathBuf::from("../../../TestSets/ValidStructure/external");
     let path = PathBuf::from("../../../../northstar");
-    let count = loader.register_workspace(path);
+    let count = loader.register_workspace(&path);
     if count.is_err() {//This will likely happen, since this is baseed on my file structure, if you are testing this yourself
         //Cry about it i guess?
         eprintln!("Error registering workspace: {:?}", count.err().unwrap());
@@ -42,7 +59,7 @@ fn test_northstar() {
         disabled_names: vec!["Northstar.Client".to_string()],
         ..Default::default()
     };
-    let unfiltered_files = loader.load().0;
+    let (unfiltered_files, load_errs) = loader.load();
     let filtered_order = loader.initialize_with_config(config);
     let filtered_files = loader.load_from_order(filtered_order.0).0;
     println!("{} unfiltered files", unfiltered_files.len());
@@ -76,6 +93,9 @@ fn test_northstar() {
             }
         }
     }
+    for err in load_errs {
+        eprintln!("Error loading file: {:?}", err);
+    }
     println!("Found {} terms", preprocessor.term_map.read().unwrap().len());
     for term in preprocessor.term_map.read().unwrap().iter() {
             println!("Term: {}", term);
@@ -89,7 +109,7 @@ fn test_vanilla() {
     let path = PathBuf::from("../../../../Titanfall2-master");
     let start = std::time::Instant::now();
 
-    let count = loader.register_workspace(path);
+    let count = loader.register_workspace(&path);
     if count.is_err() {//This will likely happen, since this is baseed on my file structure, if you are testing this yourself
         //Cry about it i guess?
         eprintln!("Error registering workspace: {:?}", count.err().unwrap());
@@ -107,7 +127,7 @@ fn test_vanilla() {
     }
     let end = std::time::Instant::now();
     println!("Time taken to register mods: {:?}", end.duration_since(start));
-    let unfiltered_files = loader.load().0;
+    let (unfiltered_files, load_errs) = loader.load();
     let iter = unfiltered_files.par_iter();
     let preprocessor = preprocessor::Preprocessor::new();
     let variants = iter.map(
@@ -137,6 +157,9 @@ fn test_vanilla() {
             }
         }
     }
+    for err in load_errs {
+        eprintln!("Error loading file: {:?}", err);
+    }
     println!("Found {} terms", preprocessor.term_map.read().unwrap().len());
     for term in preprocessor.term_map.read().unwrap().iter() {
         println!("Term: {}", term);
@@ -148,7 +171,7 @@ fn test_vanilla_overrided() {
     let northstar_path = PathBuf::from("../../../../northstar");
     let mut loader = ModLoader::new();
     let load_vanilla_start = std::time::Instant::now();
-    let count = loader.register_workspace(vanilla_path);
+    let count = loader.register_workspace(&vanilla_path);
     let load_vanilla_end = std::time::Instant::now();
     if count.is_err() {//This will likely happen, since this is baseed on my file structure, if you are testing this yourself
         //Cry about it i guess?
@@ -157,7 +180,7 @@ fn test_vanilla_overrided() {
     }
     let mut count = count.unwrap();
     let load_northstar_start = std::time::Instant::now();
-    count += loader.register_workspace(northstar_path).unwrap();
+    count += loader.register_workspace(&northstar_path).unwrap();
     let load_northstar_end = std::time::Instant::now();
     println!("Registered {} mods", count);
     let mods = loader.get_mods();
@@ -227,7 +250,16 @@ fn test_preprocessing() {
 
     }
     println!("Term Map: {:#?}", map);
-    let mock_info = FileInfo::new("name".into(), PathBuf::from("hi"), "run".into(), ModID(0));
+    let mock_mod = Mod{
+        name: "TestMod".to_string(),
+        root: PathBuf::from("test"),
+        mod_path: PathBuf::from("test/mod"),
+        script_path: PathBuf::from("test/mod/scripts"),
+        load_priority: 0,
+        depstrings: HashMap::new(),
+        loads: vec![],
+    };
+    let mock_info = FileInfo::new("name".into(), PathBuf::from("hi"), "run".into(), mock_mod.into());
     mock_info.set_text(example_text.to_string());
     let mock_file = LoadedFile {
         load_position: 0,

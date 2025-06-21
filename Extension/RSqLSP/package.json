@@ -1,5 +1,5 @@
 {
-  "name": "RSqLSP",
+  "name": "rsquirrel_lsp",
   "displayName": "RSquirrel Language Support",
   "description": "Language server client for the RSquirrel scripting language",
   "version": "0.0.1",
@@ -29,6 +29,26 @@
           "type": "array",
           "default": [],
           "description": "Vanilla scripts directory"
+        },
+        "SquirrelLSP.VanillaFiles": {
+          "type": "array",
+          "default": [],
+          "description": "Combined vanilla script directory"
+        },
+        "SquirrelLSP.Workspaces": {
+          "type": "array",
+          "default": [],
+          "description": "Other target mods or workspaces to include, loaded after vanilla"
+        },
+        "SquirrelLSP.LoadFromGitLinks": {
+          "type": "boolean",
+          "default": false,
+          "description": "[ Not implemented ] Download mods from github links"
+        },
+        "SquirrelLSP.LoadFromThunderstoreLinks": {
+          "type": "boolean",
+          "default": false,
+          "description": "[ Not implemented ] Download mods from Thunderstore links"
         },
         "SquirrelLSP.maxNumberOfProblems": {
           "scope": "resource",

@@ -1,7 +1,7 @@
-use std::{rc::Rc, sync::{Arc, RwLock}};
+use std::sync::{Arc, RwLock};
 
-use chumsky::{input::Input, span::SimpleSpan, text};
-use compiler_state::{term::{arc_term::ArcTerm, KnownTerm}, CompilerState, CompilerTerm};
+use chumsky::{input::Input, span::SimpleSpan};
+use compiler_state::{term::KnownTerm, CompilerState};
 use mod_loader::fileinfo::{FileType, LoadedFile};
 use parse_common::parsed_element::Parsed;
 use preprocessor_parser::{PreprocessedAST, PreprocessorAST};
@@ -32,7 +32,10 @@ impl Preprocessor {
             // This is unbelievably scuffed and entirely because i *hate* lifetimes
             let tokens: TokenStore = TokenStore::from_file(&file);
 
-            
+            //Yes this is just fucking with the borrow checker
+            //I do not care any more (assuming it works, which it probably wont :)  )
+            //TODO: Un-lifetime everything if possible, the ast SHOULD own the input, but chumsky really *really* hates that
+            //I would rather not have to clone everything so
             let ast: Vec<Parsed<'_, PreprocessorAST<'_>>> = preprocessor_parser::preprocess(&tokens.tokens)
                 .map_err(|e| format!("Failed to preprocess file with name\"{}\": {}", file.file_info.name(), e))?;
             let ast: Vec<Parsed<'_, PreprocessorAST<'_>>> = unsafe {
@@ -70,6 +73,7 @@ impl Preprocessor {
 ///If i understand rust correctly ( I do not )
 /// This shouldn't cause a leak since the static is held within another object (the struct) and should drop along with the rest of it
 /// TODO: When i get round to benchmarking, profile this
+#[derive(Debug)]
 pub struct TokenStore<'a> {
     tokens: Vec<TokenItem<'a>>,
     _text: Arc<String>,//Ensures text text wont be dropped while tokens borrows it still
@@ -77,6 +81,7 @@ pub struct TokenStore<'a> {
 impl<'a> TokenStore<'a> {
     pub fn from_file(file: &LoadedFile) -> Self {
         let text = file.file_info.text();
+        //
         let tokens: Vec<TokenItem<'_>> = sqparse::tokenize(text.as_ref(), sqparse::Flavor::SquirrelRespawn).into_tokens();
         let tokens = unsafe {
             std::mem::transmute::<Vec<TokenItem<'_>>, Vec<TokenItem<'a>>>(tokens)
@@ -101,14 +106,15 @@ pub struct Block<'a>{
     pub items: Arc<Vec<TokenItem<'a>>>,
     pub range: std::ops::Range<usize>, //This is the range of the block in the original text
 }
-pub struct PreprocessedScript<'a> {
+#[derive(Debug)]
+pub struct PreprocessedScript {
     pub file: LoadedFile,
     //I'm not convinced this is safe to pub, its scary (Ok seriously copilot, why did you try correct that to scawwy, lets have a talk)
-    pub tokens: TokenStore<'a>,//Here because lifetimes suck and i hate interacting with them, so fuck it
-    pub ast: PreprocessedAST<'a>,
+    pub tokens: TokenStore<'static>,//Here because lifetimes suck and i hate interacting with them, so fuck it
+    pub ast: PreprocessedAST<'static>,
     //pub tokens: Rc<Vec<TokenItem<'a>>>,
     //pub ast: PreprocessedAST<'a>,
-    pub variants: Vec<PreprocessedVariant<'a>>,
+    pub variants: Vec<PreprocessedVariant<'static>>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreprocessedVariant<'a> {
@@ -117,10 +123,13 @@ pub struct PreprocessedVariant<'a> {
 }
 impl PreprocessedVariant<'_> {
     pub fn to_text(&self) -> String {
+
+        //TODO: This is problematic, i have somewhat disconected this from the current file state
+        //So its now *technically* possible for this to generate from an older file version, and then print using the new versions text
         let text = self.id.file.file_info.text();
         self.blocks.iter()
             .map(|block: &Block<'_>| {
-                block.range.start..block.range.end
+                block.range.clone()
             })
             .map(|range| {
                 text.get(range).unwrap_or("").to_string()
@@ -171,7 +180,7 @@ impl<'a> Input<'a> for &'a PreprocessedVariant<'a> {
         Some(item.clone())
     }
 
-    unsafe fn span(cache: &mut Self::Cache, range: std::ops::Range<&Self::Cursor>) -> Self::Span {
-        SimpleSpan::from(range.start.1..range.end.1)
+    unsafe fn span(_: &mut Self::Cache, range: std::ops::Range<&Self::Cursor>) -> Self::Span {
+        SimpleSpan::from(range.start.1..range.end.1)//TODO: This is wrong i think
     }
 }

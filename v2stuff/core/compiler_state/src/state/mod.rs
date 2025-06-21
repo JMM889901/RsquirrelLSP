@@ -1,6 +1,6 @@
-use std::{collections::HashSet, fmt::{Debug, Display}, hash::Hash, vec};
+use std::{fmt::{Debug}, vec};
 
-use crate::{state, term::CompareResult, PreprocessorTerm};
+use crate::{term::CompareResult};
 
 pub mod sorted_vec_state;
 pub mod hashmap_state;
@@ -15,7 +15,7 @@ pub mod hashmap_state;
 // (Specified in the run-on or actually present within the file)
 //
 // Term: a single condition, IE SERVER or MP 
-// (for simplicity, !TERM is implemented by terms, since it lets me differ the implementation more easily)
+// (for simplicity, !TERM is implemented by terms, since it lets me differ the implementation more easily) <- easily my ass lmao
 
 
 /// Represents the preprocessor terms used when RSquirrel parses a file
@@ -28,12 +28,14 @@ pub mod hashmap_state;
 /// 
 /// This moves some (but not all) of the work up-front, but of course each variant we produce
 /// has to be run through all of the analysis steps. (though this can be parallelized very easily)
-/// 
-/// Repr is how we choose to store a term, Key is optional for state represents things as seperate objects (Such as a hashmap key/value)
+///
+/// Multistate or one run is an alternative approach, multistate being that we split varaints at parse-time and only reparse relevant sections
+/// while in one-run we handle everything as one parse, this is not possible with a PEG
+/// since it requires ambiguity as each input token can have any number of output tokens 
 pub trait CompilerState<Repr: Sized + Clone + Sized> : Debug + Sized + Clone + PartialEq + Eq{
     type Key<'a>: 'a
         where Self: 'a;
-    fn terms<'a>(&'a self) -> impl Iterator<Item = Self::Key<'a>>;
+    fn terms(&self) -> impl Iterator<Item = Self::Key<'_>>;
     fn size(&self) -> usize;
 
     /// Does SELF explicitly reject other, technically its possible for other not to reject self (or err, is it actually? probably not)

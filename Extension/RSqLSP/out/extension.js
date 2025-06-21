@@ -56,8 +56,8 @@ function activate(context) {
         // Display a message box to the user
         vscode.window.showInformationMessage('Hello World from RSquirrel Language Support!');
     });
-    let filename = "LSP";
-    if (process.platform == 'win32') {
+    let filename = "language_server";
+    if (process.platform === 'win32') {
         filename = filename + ".exe";
     }
     const command = path.resolve(context.extensionPath, "./bin/", filename);

@@ -1,23 +1,24 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::{Path, PathBuf}};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{fileinfo::ModScriptEntry, mods::Mod, ModLoadError};
 
 impl Mod {
-    pub fn from_json(root: PathBuf, file: PathBuf) -> Result<Self, ModLoadError> {
+    pub fn from_json(root: &Path, file: PathBuf) -> Result<Self, ModLoadError> {
         let mod_pure: ModPure = serde_json::from_reader(std::fs::File::open(&file)?)?;
         Ok(Self {
             script_path: root.join("mod").join("scripts").join("vscripts"),
-            root,
+            root: root.to_path_buf(),
             mod_path: file,
-            load_priority: mod_pure.load_priority,
+            load_priority: mod_pure.load_priority + 1,//Sketchy, watch out for this
+            //Its either this or i use isize, vanilla files should load first so have priority 0
             name: mod_pure.name,
             loads: mod_pure
                 .scripts
                 .into_iter()
                 .map(|s| ModScriptEntry {
-                    rel_path: PathBuf::from(s.path), //Local to root path
+                    rel_path: PathBuf::from(s.path.strip_prefix("/").unwrap_or(&s.path)), //Local to root path
                     run_on: s.run_on,
                 })
                 .collect(),

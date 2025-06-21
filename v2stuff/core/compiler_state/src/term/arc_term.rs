@@ -1,6 +1,6 @@
-use std::{fmt::{format, Display}, hash::Hash, sync::Arc};
+use std::{fmt::{Display}, hash::Hash, sync::Arc};
 
-use crate::{term::{index_term::TermMap, KnownTerm, TermTruth}, PreprocessorTerm};
+use crate::{term::{KnownTerm, TermTruth}, PreprocessorTerm};
 
 
 
@@ -116,7 +116,7 @@ pub fn to_arc_term(term: &str, map: &[Arc<KnownTerm>]) -> ArcTerm {
 
 #[cfg(test)]
 mod tests{
-    use std::collections::HashMap;
+    
 
     use crate::{state::{sorted_vec_state::SortedVecState, CompilerState}};
 
@@ -157,7 +157,7 @@ mod tests{
     fn states_contain_str(states: &[ArcTermState], terms: Vec<Vec<&str>>) -> bool {
         //let terms: Vec<Vec<ArcTerm>> = terms.into_iter().map(|v| v.into_iter().map(ArcTerm::from).collect()).collect();
         let expected_states = generate_test(terms);
-        states_contain(&states, &expected_states)
+        states_contain(states, &expected_states)
     }
     fn states_contain(states: &[ArcTermState], expected: &[ArcTermState]) -> bool {
         expected.iter().all(|state| states.iter().any(|s| state_equals_by_value(s, state)))

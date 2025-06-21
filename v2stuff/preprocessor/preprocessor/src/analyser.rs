@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
 use compiler_state::{term::CompareResult, CompilerState};
 use mod_loader::fileinfo::LoadedFile;
 use parse_common::parsed_element::Parsed;
 use preprocessor_parser::{PreprocessedAST, PreprocessorAST};
-use sqparse::TokenItem;
 
 use crate::{predictor::evaluate_state, Block, PreprocessedVariant, Preprocessor, VariantID};
 

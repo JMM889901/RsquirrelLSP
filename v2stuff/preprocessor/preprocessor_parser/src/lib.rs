@@ -1,9 +1,8 @@
-use core::borrow;
-use std::{fmt::format, sync::Arc};
+use std::{sync::Arc};
 
 use crate::{grammar::branch::branch, statements::PreprocessorExpression};
 use chumsky::{
-    container::{Container, Seq}, prelude::{any, choice, recursive, via_parser}, span::{SimpleSpan, Span}, IterParser, Parser
+    prelude::{any, choice, recursive, via_parser}, span::{SimpleSpan, Span}, IterParser, Parser
 };
 use parse_common::{
     errors::ParseError,

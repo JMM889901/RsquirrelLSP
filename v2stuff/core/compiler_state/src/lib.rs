@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 
-use crate::{state::{hashmap_state::HashMapState, sorted_vec_state::SortedVecState}, term::{arc_term::ArcTerm, index_term::IndexTerm}};
+use crate::{state::sorted_vec_state::SortedVecState, term::arc_term::ArcTerm};
 pub use crate::term::PreprocessorTerm;
 
 pub mod state;
@@ -12,7 +11,7 @@ pub type CompilerState = SortedVecState<ArcTerm>;//This is so close to being as 
 
 #[cfg(test)]
 mod bench {
-    use crate::{state::CompilerState, term::{arc_term::{generate_map, to_arc_term, ArcTerm}, index_term::{self, to_idx_term}, string_term::StringTerm}};
+    use crate::{state::{hashmap_state::HashMapState, CompilerState}, term::{arc_term::{generate_map, to_arc_term, ArcTerm}, index_term::{self, to_idx_term, IndexTerm}, string_term::StringTerm}};
 
     use super::*;
     fn all_combs_recur(terms: &[&str]) -> Vec<Vec<String>> {

@@ -1,4 +1,4 @@
-use std::{fmt::format, hash::Hash, fmt::Display};
+use std::hash::Hash;
 
 use crate::{state::sorted_vec_state::SortedVecState, term::{KnownTerm, TermTruth}, PreprocessorTerm};
 
@@ -126,7 +126,7 @@ pub fn to_idx_term(term: &str, map: &TermMap) -> IndexTerm {
 
 #[cfg(test)]
 mod tests{
-    use std::collections::HashMap;
+    
 
     use crate::{state::{sorted_vec_state::SortedVecState, CompilerState}};
 
@@ -152,7 +152,7 @@ mod tests{
     }
     fn generate_states(states: Vec<Vec<&str>>, map: &TermMap) -> Vec<IndexTermState> {
         states.into_iter().map(|terms| {
-            let terms: Vec<IndexTerm> = terms.into_iter().map(|t| to_idx_term(&t, map)).collect();
+            let terms: Vec<IndexTerm> = terms.into_iter().map(|t| to_idx_term(t, map)).collect();
             IndexTermState::new(terms)
         }).collect()
     }
@@ -160,7 +160,7 @@ mod tests{
     fn states_contain_str(states: &[IndexTermState], terms: Vec<Vec<&str>>) -> bool {
         //let terms: Vec<Vec<IndexTerm>> = terms.into_iter().map(|v| v.into_iter().map(IndexTerm::from).collect()).collect();
         let expected_states = generate_test(terms).0;
-        states_contain(&states, &expected_states)
+        states_contain(states, &expected_states)
     }
     fn states_contain(states: &[IndexTermState], expected: &[IndexTermState]) -> bool {
         expected.iter().all(|state| states.iter().any(|s| state_equals_by_value(s, state)))

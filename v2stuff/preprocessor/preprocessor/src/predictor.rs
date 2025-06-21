@@ -1,8 +1,8 @@
 use core::panic;
 use std::{sync::Arc, vec};
 
-use compiler_state::{state, term::{self, arc_term::ArcTerm, CompareResult, KnownTerm}, CompilerState, CompilerTerm};
-use preprocessor_parser::{grammar::expression::expression_parser, parse_expression, statements::PreprocessorExpression, PreprocessedAST, PreprocessorAST};
+use compiler_state::{term::{arc_term::ArcTerm, CompareResult, KnownTerm}, CompilerState, CompilerTerm};
+use preprocessor_parser::{parse_expression, statements::PreprocessorExpression, PreprocessedAST, PreprocessorAST};
 use parse_common::parsed_element::Visitable;
 use crate::Preprocessor;
 use preprocessor_parser::statements::PreprocessorExpression::Identifier;
@@ -31,47 +31,6 @@ impl Preprocessor{
         new
     }
 
-    pub fn not_vm(&self, vm: String) -> Vec<Vec<CompilerTerm>> {
-        let others = match vm.as_str() {
-            "SERVER" => ("CLIENT", "UI"),
-            "CLIENT" => ("SERVER", "UI"),
-            "UI" => ("SERVER", "CLIENT"),
-            _ => return vec![],
-        };
-        let left = vec![CompilerTerm::from_true(self.get_term(others.0.to_string())), 
-                        CompilerTerm::from_false(self.get_term(others.1.to_string()))];
-        let right = vec![CompilerTerm::from_true(self.get_term(others.1.to_string())), 
-                         CompilerTerm::from_false(self.get_term(others.0.to_string()))];
-        vec![left, right]
-    }
-    pub fn not_other_vms(&self, vm: String) -> Vec<CompilerTerm> {
-        let others = match vm.as_str() {
-            "SERVER" => ("CLIENT", "UI"),
-            "CLIENT" => ("SERVER", "UI"),
-            "UI" => ("SERVER", "CLIENT"),
-            _ => return vec![],
-        };
-        vec![
-            CompilerTerm::from_false(self.get_term(others.0.to_string())),
-            CompilerTerm::from_false(self.get_term(others.1.to_string())),
-        ]
-    }
-
-    fn handle_vm_term(&self, term: Arc<KnownTerm>) -> Vec<Vec<CompilerTerm>> {
-        let mut terms = Vec::new();
-        let not_vm = CompilerTerm::from_false(term.clone());
-        let is_others = self.not_vm(term.to_string());
-        for state in is_others {
-            let mut new_state = state.clone();
-            new_state.push(not_vm.clone());
-            terms.push(new_state);
-        }
-        let is_vm = CompilerTerm::from_true(term.clone());
-        let mut not_others = self.not_other_vms(term.to_string());
-        not_others.push(is_vm);
-        terms.push(not_others);
-        terms
-    }
 
     pub fn identify_valid_states(&self, runon: &str, ast: &PreprocessedAST) -> Result<Vec<CompilerState>, String> {
         let tokens = sqparse::tokenize(runon, sqparse::Flavor::SquirrelRespawn).into_tokens();
@@ -94,6 +53,7 @@ impl Preprocessor{
     }
 
     //This is stupid, un-stupid this later ( I wont )
+    //Theres no good reason to need to do this, its just because i store them as true/false rather than an enum
     pub fn get_vm_combs(&self) -> Vec<Vec<CompilerTerm>> {
         let server = vec![CompilerTerm::from_true(self.get_term("SERVER".to_string())), 
                         CompilerTerm::from_false(self.get_term("CLIENT".to_string())), CompilerTerm::from_false(self.get_term("UI".to_string()))];
@@ -175,23 +135,7 @@ impl Preprocessor{
     }
 }
 
-fn build_states_recursive(
-    terms: &[Arc<KnownTerm>],
-) -> Vec<Vec<CompilerTerm>> {
-    if terms.is_empty() {
-        return vec![Vec::new()];
-    }
-    let mut states = Vec::new();
-    let first_term = terms[0].clone();
-    let rest_terms = &terms[1..];
-    
-    for state in build_states_recursive(rest_terms) {
-        states.push(vec![CompilerTerm::from_true(first_term.clone())].into_iter().chain(state.clone()).collect());
-        states.push(vec![CompilerTerm::from_false(first_term.clone())].into_iter().chain(state.clone()).collect());
-    }
-    
-    states
-}
+
 pub fn is_vm(term: &str) -> bool {
     matches!(term, "SERVER" | "CLIENT" | "UI")
 }

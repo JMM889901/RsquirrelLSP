@@ -16,7 +16,7 @@ impl<T: Hash + Ord + Clone + Debug> CompilerState<T> for HashMapState<T> {
     type Key<'a> = (&'a T, &'a TermTruth)
         where Self: 'a;
     
-    fn terms<'a>(&'a self) -> impl Iterator<Item = Self::Key<'a>> {
+    fn terms(&self) -> impl Iterator<Item = Self::Key<'_>> {
         self.terms.iter()
     }
 

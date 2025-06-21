@@ -1,10 +1,11 @@
-use crate::ModID;
 use std::fmt::Display;
 use std::{
     io::Read,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
+
+use crate::mods::Mod;
 
 #[derive(Debug, Clone)]
 pub struct ModScriptEntry {
@@ -48,7 +49,7 @@ pub enum FileType {
 
 /// Maybe at some point, but not now
 pub struct SquirrelAmbiguiousFile {
-    pub loaded_by: ModID, //Specifically the mod.json that says we load a file in this place
+    pub loaded_by: Arc<Mod>, //Specifically the mod.json that says we load a file in this place
     pub files: Vec<SquirrelFile>,
 }
 pub struct SquirrelFile {}
@@ -74,7 +75,7 @@ pub struct FileInfoInternal {
     pub name: String,
     pub path: PathBuf,
     pub run_on: String,
-    pub loaded_by: ModID, //The mod from which this file was found
+    pub loaded_by: Arc<Mod>, //The mod from which this file was found
     #[cfg(feature = "timed")]
     pub preprocess_time: RwLock<std::time::Duration>,
     #[cfg(feature = "timed")]
@@ -99,11 +100,11 @@ impl Display for FileInfo {
 }
 
 impl FileInfo {
-    pub fn loaded_by(&self) -> ModID {
-        self.0.loaded_by
+    pub fn loaded_by(&self) -> Arc<Mod> {
+        self.0.loaded_by.clone()
     }
 
-    pub fn new(name: String, path: PathBuf, run_on: String, loaded_by: ModID) -> Self {
+    pub fn new(name: String, path: PathBuf, run_on: String, loaded_by: Arc<Mod> ) -> Self {
         FileInfo(Arc::new(FileInfoInternal {
             text: RwLock::new(None),
             offsets: RwLock::new(None),

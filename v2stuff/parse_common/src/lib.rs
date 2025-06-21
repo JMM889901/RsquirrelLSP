@@ -109,13 +109,13 @@ pub fn token<'src>() -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, 
 
 
 
-pub fn then_expect<'src, T, V: 'src>(
+pub fn then_expect<'src, T, V>(
     base_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, T>> + 'src,
     expected: Vec<V>,
     second_parser: impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, V>> + 'src,
 ) -> impl Parser<'src, &'src [TokenItem<'src>], (Parsed<'src, T>, Option<Parsed<'src, V>>)>
 where
-    V: Expectable + Clone,
+    V: Expectable + Clone + 'src,
 {
     base_parser.
     then(expect_match(second_parser, expected.clone()).or_not())

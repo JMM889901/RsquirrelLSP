@@ -31,11 +31,11 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage('Hello World from RSquirrel Language Support!');
 	});
 
-	let filename = "LSP"
-	if (process.platform == 'win32') {
-		filename = filename + ".exe"
+	let filename = "language_server";
+	if (process.platform === 'win32') {
+		filename = filename + ".exe";
 	}
-	const command = path.resolve(context.extensionPath, "./bin/", filename)
+	const command = path.resolve(context.extensionPath, "./bin/", filename);
   	const run: Executable = {
   	  command,
   	  options: {
@@ -88,7 +88,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Start the client. This will also launch the server
 	client.start();
-	window.showInformationMessage("done")
+	window.showInformationMessage("done");
 
 	context.subscriptions.push(disposable);
 }

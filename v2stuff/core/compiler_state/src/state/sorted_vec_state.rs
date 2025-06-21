@@ -1,6 +1,6 @@
 use std::{fmt::{Debug, Display}, hash::Hash};
 
-use crate::{state::CompilerState, term::{self, arc_term::ArcTerm, CompareResult}, PreprocessorTerm};
+use crate::{state::CompilerState, term::{arc_term::ArcTerm, CompareResult}, PreprocessorTerm};
 
 //Sorted vec implementation
 #[derive(Debug, Clone)]
@@ -162,10 +162,7 @@ mod tests{
             SortedVecState::new(terms)
         }).collect()
     }
-    fn state_equals(state: &StringState, terms: Vec<String>) -> bool {
-        let terms: Vec<StringTerm> = terms.into_iter().map(StringTerm::from).collect();
-        state.terms == terms
-    }
+
     fn states_contain_str(states: &[StringState], terms: Vec<Vec<String>>) -> bool {
         let terms: Vec<Vec<StringTerm>> = terms.into_iter().map(|v| v.into_iter().map(StringTerm::from).collect()).collect();
         let expect_states = terms.into_iter().map(StringState::new).collect::<Vec<_>>();

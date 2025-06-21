@@ -1,5 +1,3 @@
-use core::panic;
-
 use chumsky::{
     prelude::{choice, recursive},
     Boxed, IterParser, Parser,
