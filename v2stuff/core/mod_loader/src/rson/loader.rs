@@ -1,24 +1,18 @@
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::{path::{Path}, sync::RwLock};
 
-use crate::{mods::Mod, rson::parser::rson};
+use crate::{mods::{VanillaFiles}, rson::parser::rson};
 
-impl Mod {
-    pub fn from_rson(root: &Path, file: PathBuf) -> Result<Self, crate::ModLoadError> {
+impl VanillaFiles {
+    pub fn from_rson(root: &Path, main: &Path) -> Result<Self, crate::ModLoadError> {
+        let file = main.join("scripts.rson");
         let text = std::fs::read_to_string(&file)?;
         let scripts = rson::rson(&text)?;
-        let name = file
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("scripts.rson")
-            .to_string();
+
         Ok(Self {
-            script_path: root.to_path_buf(), //Again, assuming this is just coming from vanilla, where the rson is already in the scripts folder
+            script_paths: RwLock::new(vec![main.to_path_buf()]), 
             root: root.to_path_buf(),
-            mod_path: file,
-            load_priority: 0,
-            name,
             loads: scripts,
-            depstrings: HashMap::new(),
+            main_path: main.to_path_buf(),
         })
     }
 }

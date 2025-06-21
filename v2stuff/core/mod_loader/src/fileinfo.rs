@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::mods::Mod;
+use crate::mods::{FileSource, Mod};
 
 #[derive(Debug, Clone)]
 pub struct ModScriptEntry {
@@ -75,7 +75,7 @@ pub struct FileInfoInternal {
     pub name: String,
     pub path: PathBuf,
     pub run_on: String,
-    pub loaded_by: Arc<Mod>, //The mod from which this file was found
+    pub loaded_by: FileSource, //The mod from which this file was found
     #[cfg(feature = "timed")]
     pub preprocess_time: RwLock<std::time::Duration>,
     #[cfg(feature = "timed")]
@@ -100,11 +100,11 @@ impl Display for FileInfo {
 }
 
 impl FileInfo {
-    pub fn loaded_by(&self) -> Arc<Mod> {
-        self.0.loaded_by.clone()
+    pub fn loaded_by(&self) -> &FileSource {
+        &self.0.loaded_by
     }
 
-    pub fn new(name: String, path: PathBuf, run_on: String, loaded_by: Arc<Mod> ) -> Self {
+    pub fn new(name: String, path: PathBuf, run_on: String, loaded_by: FileSource ) -> Self {
         FileInfo(Arc::new(FileInfoInternal {
             text: RwLock::new(None),
             offsets: RwLock::new(None),

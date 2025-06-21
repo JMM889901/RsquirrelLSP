@@ -1,7 +1,7 @@
 use std::{env};
 ///TODO SIKE THIS IS JUST E2Es AGAIN, I CAN'T KEEP GETTING AWAY WITH THIS
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let _args: Vec<String> = env::args().collect();
     todo!()
 }
 
@@ -13,14 +13,13 @@ mod tests{
     use mod_loader::{fileinfo::{FileInfo, FileType, LoadedFile}, mods::Mod, LoadConfig, ModLoader};
 
 
-
 #[test]
 fn test_scuffed_paths() {
     //Because northstar has a single file which it loads with a leading / for no reason >:(
     let path = PathBuf::from("../../../../northstar/Northstar.CustomServers/mod/scripts/vscripts/");
     let good_join = "ai/_ai_turret_sentry.gnut";
     let join = "/ai/_ai_turret_sentry.gnut";
-    let joined = path.join(join);
+    let joined = path.join(PathBuf::from(join));
     assert!(!joined.exists(), "Joined path should not currently exist: {:?}", joined);
     let joined = path.join(good_join);
     assert!(joined.exists(), "Joined path should exist: {:?}", joined);
@@ -48,12 +47,7 @@ fn test_northstar() {
     println!("Registered {} mods", count.unwrap());
     let mods = loader.get_mods();
     for _mod in mods {
-        println!("Mod: {}", _mod.name);
-        println!("Root: {:?}", _mod.root);
-        println!("Path: {:?}", _mod.mod_path);
-        println!("Script Path: {:?}", _mod.script_path);
-        println!("Load Priority: {}", _mod.load_priority);
-        println!("Dependencies: {:?}", _mod.depstrings);
+        println!("{}", _mod.long_text());
     }
     let config = LoadConfig{
         disabled_names: vec!["Northstar.Client".to_string()],
@@ -118,12 +112,7 @@ fn test_vanilla() {
     println!("Registered {} mods", count.unwrap());
     let mods = loader.get_mods();
     for _mod in mods {
-        println!("Mod: {}", _mod.name);
-        println!("Root: {:?}", _mod.root);
-        println!("Path: {:?}", _mod.mod_path);
-        println!("Script Path: {:?}", _mod.script_path);
-        println!("Load Priority: {}", _mod.load_priority);
-        println!("Dependencies: {:?}", _mod.depstrings);
+        println!("{}", _mod.long_text());
     }
     let end = std::time::Instant::now();
     println!("Time taken to register mods: {:?}", end.duration_since(start));
@@ -185,12 +174,7 @@ fn test_vanilla_overrided() {
     println!("Registered {} mods", count);
     let mods = loader.get_mods();
     for _mod in mods {
-        println!("Mod: {}", _mod.name);
-        println!("Root: {:?}", _mod.root);
-        println!("Path: {:?}", _mod.mod_path);
-        println!("Script Path: {:?}", _mod.script_path);
-        println!("Load Priority: {}", _mod.load_priority);
-        println!("Dependencies: {:?}", _mod.depstrings);
+        println!("{}", _mod.long_text());
     }
     let load_mods_start = std::time::Instant::now();
     let unfiltered_files = loader.load().0;
@@ -242,8 +226,8 @@ fn test_preprocessing() {
     }
 
     let runon = "SERVER || CLIENT";
-    let mut preprocessor = preprocessor::Preprocessor::new();
-    let valid = preprocessor.identify_valid_states(&runon.to_string(), &parsed);
+    let preprocessor = preprocessor::Preprocessor::new();
+    let valid = preprocessor.identify_valid_states(runon, &parsed);
     let map = &preprocessor.term_map;
     for state in valid.as_ref().unwrap() {
         println!("State: {}", state);

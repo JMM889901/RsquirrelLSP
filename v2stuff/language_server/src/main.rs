@@ -24,6 +24,7 @@ async fn main() {
     let (service, socket) = LspService::new(Backend::new);
     Server::new(stdin, stdout, socket).serve(service).await;
 }
+
 #[derive(Debug, Default)]
 pub struct ConfigData {
     pub files: Vec<LoadedFile>,

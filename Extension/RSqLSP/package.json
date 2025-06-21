@@ -30,15 +30,19 @@
           "default": [],
           "description": "Vanilla scripts directory"
         },
-        "SquirrelLSP.VanillaFiles": {
+        "SquirrelLSP.VanillaDir": {
+          "type": "string",
+          "description": "Main vanilla directory, should contain scripts.rson"
+        },
+        "SquirrelLSP.VanillaExtraDirs": {
           "type": "array",
           "default": [],
-          "description": "Combined vanilla script directory"
+          "description": "Additional vanilla directories, if not using a full script-dump this may be needed. this should not include the VanillaDir and should immediately contain script files (IE, /scripts/vscripts should be in the path)"
         },
         "SquirrelLSP.Workspaces": {
           "type": "array",
           "default": [],
-          "description": "Other target mods or workspaces to include, loaded after vanilla"
+          "description": "Other target mods or workspaces(folders containing mods) to include, loaded after vanilla"
         },
         "SquirrelLSP.LoadFromGitLinks": {
           "type": "boolean",
@@ -54,7 +58,7 @@
           "scope": "resource",
           "type": "number",
           "default": 100,
-          "description": "Controls the maximum number of problems produced by the server."
+          "description": "[ Dead, unused ]Controls the maximum number of problems produced by the server."
         },
         "SquirrelLSP.trace.server": {
           "scope": "window",

@@ -1,9 +1,12 @@
 use indexmap::IndexMap;
 use peg::error::ParseError;
+use core::error;
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::{path::Path};
-use std::path::PathBuf;
+use std::path::{self, PathBuf};
 
+use crate::mods::{FileSource, VanillaFiles};
 use crate::{
     fileinfo::{FileInfo, LoadedFile, ModScriptEntry},
     mods::Mod,
@@ -25,15 +28,30 @@ pub struct LoadConfig {
     pub disabled_names: Vec<String>,  //Mods by name
     pub disabled_paths: Vec<PathBuf>, //Mods by path (root or to json)
 }
+impl LoadConfig {
+    pub fn reject(&self, files: &FileSource) -> bool {
+        match files {
+            FileSource::DirectExternals(_) => false, // This is things directly loaded from config, so why would we reject them
+            FileSource::Mod(mod_item) => {
+                self.disabled_names.contains(&mod_item.name) ||
+                self.disabled_paths.contains(&mod_item.mod_path)
+            }
+            FileSource::Vanilla(files) => {
+                self.disabled_names.contains(&"scripts.rson".into()) ||
+                self.disabled_paths.contains(&files.root)
+            }
+        }
+    }
+}
 
 pub struct LoadOrder {
     pub config: LoadConfig,
-    pub loaded: Vec<ModScriptEntry>,
+    pub loaded: Vec<(FileSource, ModScriptEntry)>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ModLoader {
-    mods: IndexMap<usize, Vec<Arc<Mod>>>, // Load priority, mods in order of loaded
+    mods: IndexMap<usize, Vec<FileSource>>, // Load priority, mods in order of loaded
 }
 impl Default for ModLoader {
     fn default() -> Self {
@@ -47,40 +65,18 @@ impl ModLoader {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn get_mods(&self) -> Vec<&Arc<Mod>> {
+    pub fn get_mods(&self) -> Vec<&FileSource> {
         self.mods.values().flat_map(|v| v.iter()).collect()
     }
     pub fn get_mods_config<'a>(
         &'a self,
         config: &'a LoadConfig,
-    ) -> impl DoubleEndedIterator<Item = &'a Arc<Mod>> {
+    ) -> impl DoubleEndedIterator<Item = &'a FileSource> {
         self.mods.values().flat_map(|v| v.iter()).filter(move |m| {
-            !config.disabled_names.contains(&m.name) && !config.disabled_paths.contains(&m.mod_path)
+            !config.reject(m)
         })
     }
-    fn replace_mod(&mut self, old: Arc<Mod>, new: Arc<Mod>) -> Result<(), ModLoadError> {
-        let priority = old.load_priority;
-        if let Some(mods) = self.mods.get_mut(&priority) {
-            if let Some(index) = mods.iter().position(|m| Arc::ptr_eq(m, &old)) {
-                if old.load_priority == new.load_priority {
-                    mods.remove(index);
-                } else {
-                    mods[index] = new;
-                    return Ok(());
-                }
-            }
-        } else {
-            return Err(ModLoadError::CouldNotFindMod(old.mod_path.clone()))
-        }
-        for (p, mods) in &mut self.mods {
-            if p == &new.load_priority {
-                mods.push(new);
-                return Ok(());
-            }
-        }
-        Err(ModLoadError::CouldNotFindMod(new.mod_path.clone()))
-        
-    }
+
     pub fn initialize(&mut self) -> (LoadOrder, Vec<ModLoadError>) {
         let config = LoadConfig::default();
         self.initialize_with_config(config)
@@ -90,15 +86,16 @@ impl ModLoader {
         let mut errors = Vec::new();
         let mut load_order = IndexMap::new();
         for found_mod in self.get_mods_config(&config) {
-            for script in &found_mod.loads {
-                if load_order.contains_key(&script.rel_path) {
+            for script in found_mod.loads() {
+                if let Some((_, existing)) = load_order.get(&script.rel_path) {
+                    let existing: &ModScriptEntry = existing;
                     errors.push(ModLoadError::DuplicateFiles(
                         script.rel_path.clone(),
-                        found_mod.mod_path.clone(),
+                        existing.rel_path.clone(),
                     ));
                     continue;
                 }
-                load_order.insert(script.rel_path.clone(), script.clone());
+                load_order.insert(script.rel_path.clone(), (found_mod.clone(), script.clone()));
             }
         }
         let loaded = load_order.values().collect::<Vec<_>>();
@@ -112,25 +109,14 @@ impl ModLoader {
         let order = self.initialize().0;
         self.load_from_order(order)
     }
-    pub fn reload_mod(&mut self, mod_path: &Path) -> Result<bool, ModLoadError> {
-        if let Some(mod_item) = self.get_mod_by_abs_path(mod_path) {
-                let new  = {
-                    if mod_item.name == "scripts.rson"{
-                        Mod::from_rson(&mod_item.root, mod_item.mod_path.clone())?
-                    } else {
-                        Mod::from_json(&mod_item.root, mod_item.mod_path.clone())?
-                    }
-                };
-                self.replace_mod(mod_item.clone(), Arc::new(new))?;
-            }
-        todo!()
-    }
+
 
     /// Loads files from a given load order.
     ///
     /// For my own sanity, I am going to just say that external function jsons are loaded from the mod root, fight me
     /// 
     /// TODO: Is there any reason NOT to parallelize this?
+    /// OR just use an actual file searching crate, which is literally build for this and probably 100* faster
     pub fn load_from_order(&mut self, config: LoadOrder) -> (Vec<LoadedFile>, Vec<ModLoadError>) {
         let mut externals = Vec::new();
         let mut files = Vec::new();
@@ -142,18 +128,10 @@ impl ModLoader {
                 m.clone()
             }).rev().collect::<Vec<_>>();
         //First mod that has the thing is also the highest priority this way
-        for (idx, to_load) in config.loaded.iter().enumerate() {
+        for (idx, (source_mod, to_load)) in config.loaded.iter().enumerate() {
             let mut found = false;
             for m in to_search.iter() {
-                if m.script_path.join(&to_load.rel_path).exists() {
-                    //This is a file we can load
-                    let file = FileInfo::new(
-                        //I'm not sure why i even really track this
-                        to_load.get_name(),
-                        m.script_path.join(&to_load.rel_path),
-                        to_load.run_on.clone(),
-                        m.clone(),
-                    );
+                if let Some(file) = m.try_file(to_load) {
                     files.push(LoadedFile {
                         file_info: file,
                         file_type: fileinfo::FileType::Script,
@@ -162,9 +140,12 @@ impl ModLoader {
                     found = true;
                     break;
                 }
+                if found {
+                    break;
+                }
             }
             if !found {
-                errors.push(ModLoadError::NotLoaded(to_load.clone()));
+                errors.push(ModLoadError::NotLoaded(source_mod.clone(), to_load.clone()));
             }
         }
         let files = externals
@@ -174,11 +155,40 @@ impl ModLoader {
         (files, errors)
     }
 
+    pub fn register_additional_rson_roots(
+        &self,
+        root_path: &Path, 
+        additional_paths: &[PathBuf],
+    ) -> (bool, Vec<ModLoadError>) {
+        let mut errors = Vec::new();
+        let root = self.mods.values().flat_map(|v| v.iter())
+            .find_map(|m| match m { FileSource::Vanilla(v) => Some(v), _ => None });
+        if root.is_none() {
+            errors.push(ModLoadError::CouldNotFindMod(root_path.to_path_buf()));
+            return (false, errors);
+        }
+        let root = root.unwrap();
+        for additional_path in additional_paths {
+            let mut additional_path: &Path = additional_path;
+            if !additional_path.exists() {
+                errors.push(ModLoadError::CouldNotFindMod(additional_path.to_path_buf()));
+                continue;
+            }
+            if additional_path.is_file() {
+                additional_path = additional_path.parent().unwrap_or(additional_path);   
+            }
+            root.script_paths.write().unwrap().push(additional_path.to_path_buf());
+        }
+
+        (true, errors)
+
+    }
+
     /// Recursively search for mod.json and mod.rson files, up to the depth limit (currently hardcoded to 6, which i made up for no reason)
     /// Returns the number of loaded mods
     pub fn register_workspace(&mut self, root_path: &Path) -> Result<usize, ModLoadError> {
         //TODO: Replace this with the rust_search package if its worthwhile (probably is because my code is shit)
-        self.find_mods(/*root_path,*/ root_path, 0)
+        self.find_mods(root_path,  root_path, 0)
     }
 
     /// Recursively search for mod.json and mod.rson files, up to the depth limit (currently hardcoded to 3)
@@ -186,7 +196,7 @@ impl ModLoader {
     /// TODO: Warn the user if this takes longer than a few ms, this is very inefficient and doesnt really need to recurr
     fn find_mods(
         &mut self,
-        //root_path: &Path, //Might track this? but not much point, this is the root of the search not the mod itself so kinda useless
+        root_path: &Path, //Might track this? but not much point, this is the root of the search not the mod itself so kinda useless
         current_path: &Path,
         depth: usize,
     ) -> Result<usize, ModLoadError> {
@@ -204,14 +214,14 @@ impl ModLoader {
                 self.mods
                     .entry(mod_item.load_priority)
                     .or_default()
-                    .push(Arc::new(mod_item));
+                    .push(FileSource::Mod(Arc::new(mod_item)));
                 return Ok(1);
         } else if current_path.join("scripts.rson").exists() {
-            let mod_item = Mod::from_rson(current_path, current_path.join("scripts.rson"))?;
+            let mod_item = VanillaFiles::from_rson(root_path, current_path)?;
             self.mods
-                .entry(mod_item.load_priority)
+                .entry(0)
                 .or_default()
-                .push(Arc::new(mod_item));
+                .push(FileSource::Vanilla(Arc::new(mod_item)));
             return Ok(1);
         }
         let dir = current_path.read_dir()?;
@@ -222,7 +232,7 @@ impl ModLoader {
 
             if path.is_dir() {
                 // Recursively search in subdirectories
-                loaded_count += self.find_mods(/*root_path,*/ &path, depth + 1)?;
+                loaded_count += self.find_mods(root_path, &path, depth + 1)?;
             } 
         }
         Ok(loaded_count)
@@ -231,17 +241,16 @@ impl ModLoader {
         self.mods
             .values()
             .flat_map(|v| v.iter())
+            .filter_map(|m| match m {
+                FileSource::Mod(mod_) => Some(mod_),
+                _ => None,
+            })
             .find(|m| m.name == name)
     }
-    pub fn get_mod_by_abs_path(&self, path: &Path) -> Option<&Arc<Mod>> {
-        self.mods
-            .values()
-            .flat_map(|v| v.iter())
-            .find(|m| m.mod_path.canonicalize().is_ok_and(|x| x == path))
-    }
+
+
 }
 
-#[derive(Debug)]
 pub enum ModLoadError {
     Io(std::io::Error),
     Serde(serde_json::Error),
@@ -250,7 +259,30 @@ pub enum ModLoadError {
     CouldNotFindMod(PathBuf), // Mod not found in the workspace
     DuplicateFiles(PathBuf, PathBuf), // Duplicate file paths in different mods
     
-    NotLoaded(ModScriptEntry), //TODO: Why doesn't this track the mod that registered it, stupid
+    NotLoaded(FileSource, ModScriptEntry), //TODO: Why doesn't this track the mod that registered it, stupid
+}
+impl Debug for ModLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ModLoadError::Io(e) => write!(f, "IO Error: {}", e),
+            ModLoadError::Serde(e) => write!(f, "Serde Error: {}", e),
+            ModLoadError::Peg(e) => write!(f, "PEG Parse Error: {}", e),
+            ModLoadError::DuplicateMods(a, b) => write!(f, "Duplicate mods found: {} and {}", a.display(), b.display()),
+            ModLoadError::CouldNotFindMod(p) => write!(f, "Could not find mod at path: {}", p.display()),
+            ModLoadError::DuplicateFiles(p, m) => write!(f, "Duplicate file found at path: {} in mod: {}", p.display(), m.display()),
+            ModLoadError::NotLoaded(mod_item, script_entry) => write!(f, "Script entry '{}' required by mod '{}' was not found", script_entry.rel_path.display(), mod_item),
+        }
+    }
+}
+impl ModLoadError {
+    pub fn is_concerning(&self) -> bool {
+        match self {
+            ModLoadError::DuplicateFiles(left, right) => left != right, 
+            ModLoadError::NotLoaded(_mod, _) => !matches!(_mod, FileSource::Vanilla(_)), //Scripts.rson has a bunch of files that arent loaded, 
+            //presumably they were removed in retail
+            _=> true
+        }
+    }
 }
 
 impl From<std::io::Error> for ModLoadError {
@@ -310,9 +342,5 @@ mod tests {
             println!("{}", file);
         }
     }
-    /// I don't feel like sticking the entire titanfall script dump here, so i will simply not bother with rson tests
-    /// This is stupid and lazy but like, really if i wanted to i could hardcode the entire rson, you should never change it
-    /// So the actual logic really doesnt need to be that great, its literally only going to parse a single file that i already know the contents of 
-    #[test]
-    fn test_rson() {}
+
 }
