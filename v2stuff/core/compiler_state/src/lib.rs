@@ -3,6 +3,7 @@ use crate::{state::sorted_vec_state::SortedVecState, term::arc_term::ArcTerm};
 pub use crate::term::PreprocessorTerm;
 
 pub mod state;
+mod abstract_state;
 pub mod term;
 
 pub type CompilerTerm = ArcTerm;

@@ -40,8 +40,65 @@
           "description": "Additional vanilla directories, if not using a full script-dump this may be needed. this should not include the VanillaDir and should immediately contain script files (IE, /scripts/vscripts should be in the path)"
         },
         "SquirrelLSP.Workspaces": {
-          "type": "array",
           "default": [],
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {      
+                "title": "Local Path",      
+                "default": "./",
+                "type": "string",
+                "description": "Path to a workspace folder containing mods"
+              },
+              {
+                "title": "Git Repository",
+                "type": "object",
+                "default": {
+                  "url": "https://github.com/R2Northstar/NorthstarMods",
+                  "branch": "main"
+                },
+                "description": "URL to a git repository containing mods, will be cloned to the LSP appdata folder",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "Git repository URL"
+                  },
+                  "branch": {
+                    "type": "string",
+                    "default": "master",
+                    "description": "Branch to clone from"
+                  },
+                  "required": ["url"],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "title": "Thunderstore Package",
+                "description": "A thunderstore package",
+                "type": "object",
+                "default": {
+                  "owner": "northstar",
+                  "package": "Northstar"
+                },
+                "properties": {
+                  "owner": {
+                    "type": "string",
+                    "description": "Package owner"
+                  },
+                  "package": {
+                    "type": "string",
+                    "description": "Package name"
+                  },
+                  "version": {
+                    "type": "string",
+                    "description": "Package version to download, defaults to latest"
+                  }
+                },
+                "required": ["name", "path"],
+                "additionalProperties": false
+              }
+            ]
+          },
           "description": "Other target mods or workspaces(folders containing mods) to include, loaded after vanilla"
         },
         "SquirrelLSP.LoadFromGitLinks": {

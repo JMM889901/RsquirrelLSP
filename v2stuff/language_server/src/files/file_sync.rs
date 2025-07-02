@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use mod_loader::LoadConfig;
-use preprocessor::PreprocessedScript;
-use rayon::iter::{Either, IntoParallelRefIterator, ParallelIterator};
+use preprocessor::{analyser, ASTTokenIter, PreprocessedScript};
+use rayon::iter::{Either, IntoParallelRefIterator, ParallelBridge, ParallelIterator};
+use runner::Analyser;
 use tower_lsp::lsp_types::{notification::Progress, MessageType};
 
 use crate::{Backend, ConfigData, LastSaveData};
@@ -36,7 +39,7 @@ impl Backend {
             self.preprocessor.preprocessor.preprocess_file(file.clone()).map_or_else(Either::Right, Either::Left)
         });
         self.report_progress(token.clone(), format!("Preprocessed {} files", res.len())).await;
-
+        let res = Arc::new(res);
         for err in errs {
             self.client.log_message(MessageType::ERROR, format!("Error preprocessing file: {}", err)).await;
         }
@@ -51,17 +54,25 @@ impl Backend {
             ),
         }).await;
 
+        let clone = res.clone();
+        let mut analyser = Analyser::default();
+        analyser.push_files(clone);
+
         let config = LoadConfig::default();//TODO: if i choose to do configs this way, change this
         let last_save = LastSaveData {
             preprocessed: res,
+            analyser: std::sync::RwLock::new(analyser),
         };
         let config_data = ConfigData {
             files: loaded,
             last_save,
             ..Default::default()
         };
-        
+
+
         let mut configs = self.configs.write().unwrap();
+
         configs.insert(config, config_data);
+
     }
 }

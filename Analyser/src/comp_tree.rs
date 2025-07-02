@@ -47,7 +47,7 @@ impl VariantData<Arc<dyn AnalysisResultInternal>> {//This makes me feel so safe 
             VariantData::Possible(vec, bad) => {new_bad = Some(bad); vec},
             _ => panic!("oof"),
         };
-        let ptr = vec.as_ptr() as *const (SQDistinctVariant, Arc<dyn AnalysisResultInternal>);
+        let ptr = vec.as_ptr();
         let len = vec.len();
         let capacity = vec.capacity();
         std::mem::forget(vec); // Prevent Vec from being dropped

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 mod_loader =  { path = "../core/mod_loader" }
+runner = { path = "../analyser/runner" }
 compiler_state = { path = "../core/compiler_state" }
 rsquirrel_cli = { path = "../core/rsquirrel_cli" }
 parse_common = { path = "../parse_common" }

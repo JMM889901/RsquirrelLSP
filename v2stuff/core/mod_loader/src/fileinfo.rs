@@ -1,4 +1,6 @@
 use std::fmt::Display;
+use std::hash::Hash;
+use std::path::Path;
 use std::{
     io::Read,
     path::PathBuf,
@@ -31,6 +33,16 @@ pub struct LoadedFile {
     pub file_type: FileType,
     pub file_info: FileInfo,
 }
+impl Eq for LoadedFile {
+
+}
+impl Hash for LoadedFile {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.load_position.hash(state)//Should i hash the rest? i'd really rather not do that
+        //Though this does mean if a file is added or removed, all of this data is invalid
+        //but like, it kind of is already
+    }
+}
 impl Display for LoadedFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -40,6 +52,37 @@ impl Display for LoadedFile {
         )
     }
 }
+//Test functions
+impl LoadedFile { 
+    pub fn create_dummy(
+        load_position: usize,
+        path: PathBuf,
+    ) -> Self {
+        LoadedFile {
+            load_position,
+            file_type: FileType::Script,
+            file_info: FileInfo::new(
+                path.file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("dummy_file")
+                    .to_string(),
+                path.clone(),
+                "test_run_on".to_string(),
+                FileSource::Dummy, 
+            ),
+        }
+    }
+}
+
+
+impl LoadedFile {
+    pub fn abs_path_eq(&self, other: &Path) -> bool {
+        self.file_info.path().canonicalize()
+            .and_then(|p| other.canonicalize().map(|o| p == o))
+            .unwrap_or(false)
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileType {

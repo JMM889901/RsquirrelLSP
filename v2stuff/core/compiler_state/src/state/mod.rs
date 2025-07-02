@@ -53,13 +53,13 @@ pub trait CompilerState<Repr: Sized + Clone + Sized> : Debug + Sized + Clone + P
     /// Compare a state with a set of states, returning the set of missing partial states to make at least one of the set always true.
     /// 
     /// Any one of these states could be added to self to make the comparison true.
-    fn try_resolve(&self, other: &[Self]) -> Result<(), Vec<Self>> {
+    fn try_resolve(&self, other: Vec<&Self>) -> Result<Self, Vec<Self>> {
         let mut differ = vec![];
         for state in other {
             if let Some(different) = self.differing_substate(state) {
                 differ.push(different);
             } else {
-                return Ok(());
+                return Ok(state.clone()); // There is a state that accepts self
             }
         }
         Err(Self::resolve_set(differ))
@@ -67,7 +67,7 @@ pub trait CompilerState<Repr: Sized + Clone + Sized> : Debug + Sized + Clone + P
 
     /// This probably won't be used so I can track the actual result for error messages
     fn always_accepts_one(&self, other: Vec<Self>) -> bool{
-        let new = self.try_resolve(&other);
+        let new = self.try_resolve(other.iter().collect());
         new.is_ok()
     }
 

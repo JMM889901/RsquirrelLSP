@@ -75,7 +75,7 @@ fn test_northstar() {
                 if preproc.variants.is_empty() && preproc.file.file_type == FileType::Script {
                     panic!("valid states: {:?}", preprocessor.identify_valid_states(preproc.file.file_info.run_on(), preproc.ast.as_ref()).unwrap());
                 }
-                for v in &preproc.variants {
+                for v in preproc.variants.clone().iter() {
                     println!("Variant ID: {}", v.id.state);
                     println!("Variant blocks: {}", v.blocks.len());
                     //println!("Variant Text: {}\n\n", v.to_text());
@@ -134,7 +134,7 @@ fn test_vanilla() {
                 if preproc.variants.is_empty() && preproc.file.file_type == FileType::Script {
                     panic!("valid states: {:?}", preprocessor.identify_valid_states(preproc.file.file_info.run_on(), preproc.ast.as_ref()).unwrap());
                 }
-                for v in &preproc.variants {
+                for v in preproc.variants.clone().iter() {
                     println!("Variant ID: {}", v.id.state);
                     println!("Variant blocks: {}", v.blocks.len());
                     //println!("Variant Text: {}\n\n", v.to_text());
@@ -257,7 +257,7 @@ fn test_preprocessing() {
     println!("Doing real preprocessing: ");
     let preprocessed = preprocessor.preprocess_file(mock_file).unwrap();
     let variants = preprocessed.variants;
-    for variant in variants {
+    for variant in variants.iter() {
         println!("Variant ID: {}", variant.id.state);
         println!("Variant Text: \n{}\n\n", variant.to_text());
     }

@@ -6,7 +6,7 @@ use preprocessor_parser::{PreprocessedAST, PreprocessorAST};
 use crate::{predictor::evaluate_state, Block, PreprocessedVariant, Preprocessor, VariantID};
 
 impl Preprocessor{
-    pub fn split_ast<'a>(&self, ast: &PreprocessedAST<'a>, states: Vec<CompilerState>, id: &LoadedFile) -> Vec<PreprocessedVariant<'a>> {
+    pub fn split_ast(&self, ast: &PreprocessedAST<'_>, states: Vec<CompilerState>, id: &LoadedFile) -> Vec<PreprocessedVariant> {
         let mut variants = Vec::new();
         for state in states {
             let variant = self.apply_state(ast, &state, id);
@@ -15,7 +15,7 @@ impl Preprocessor{
         variants
     }
 
-    pub fn apply_state<'a>(&self, ast: &PreprocessedAST<'a>, state: &CompilerState, id: &LoadedFile) -> PreprocessedVariant<'a> {
+    pub fn apply_state(&self, ast: &PreprocessedAST<'_>, state: &CompilerState, id: &LoadedFile) -> PreprocessedVariant {
         let mut blocks = Vec::new();
         for ast in ast{
             blocks.extend(get_blocks(ast, state));
@@ -29,21 +29,21 @@ impl Preprocessor{
             blocks,
         }
     }
-
 }
 
 
-    pub fn get_blocks<'a>(ast: &Parsed<'a, PreprocessorAST<'a>>, state: &CompilerState) -> Vec<Block<'a>> {
+    pub fn get_blocks<'a>(ast: &Parsed<'a, PreprocessorAST<'a>>, state: &CompilerState) -> Vec<Block> {
         let mut blocks = Vec::new();
         match &ast.item {
             PreprocessorAST::Block(block) => {
                 blocks.push(Block {
-                    items: block.clone(),
+                    items: *block,
                     range: ast.range.into_range(),
                 });
             }
             PreprocessorAST::If { body, ends, condition } => {
-                if evaluate_state(state, &condition.item) == CompareResult::Accept {
+                if evaluate_state(state, &condition.item) != CompareResult::Reject {// If it works its better to allow dont care
+                    //In parsing, we should never encounter dont care, however this lets me do things like user facing options to view the file with different terms
                     for item in body {
                         blocks.extend(get_blocks(item, state));
                     }
@@ -52,7 +52,7 @@ impl Preprocessor{
                 }
             }
             PreprocessorAST::ElseIf { body, ends, condition } => {
-                if evaluate_state(state, &condition.item) == CompareResult::Accept {
+                if evaluate_state(state, &condition.item) != CompareResult::Reject {
                     for item in body {
                         blocks.extend(get_blocks(item, state));
                     }

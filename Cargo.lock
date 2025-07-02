@@ -1071,6 +1071,7 @@ dependencies = [
  "preprocessor_parser",
  "rayon",
  "rsquirrel_cli",
+ "runner",
  "serde",
  "serde_json",
  "sqparse",
@@ -1735,6 +1736,18 @@ dependencies = [
  "preprocessor_parser",
  "rayon",
  "sqparse",
+]
+
+[[package]]
+name = "runner"
+version = "0.1.0"
+dependencies = [
+ "compiler_state",
+ "downcast-rs",
+ "indexmap",
+ "mod_loader",
+ "preprocessor",
+ "rayon",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@ use std::{collections::HashMap, env, path::PathBuf, sync::{Arc, RwLock, Weak}};
 
 use analysis_common::{spanning_search::TraversableMap, variable::VariableReference, modjson::{load_base, load_mod}};
 use analysis_runner::state_resolver::CompiledState;
-use ASTAnalyser::{analyse_state, find_funcs, load_order::{identify_file_tree, identify_globals, File, FilePreAnalysis, ParseType}, single_file::{analyse, collect_errs, AnalysisState}, LogicError, Scope};
+use ASTAnalyser::{find_funcs, load_order::{identify_file_tree, identify_globals, File, FilePreAnalysis, ParseType}, single_file::{analyse, collect_errs, AnalysisState}, LogicError, Scope};
 use common::{FileInfo, FileType};
 use ASTParser::{ast::Element, error::Error};
 use ConfigAnalyser::get_file_varaints;

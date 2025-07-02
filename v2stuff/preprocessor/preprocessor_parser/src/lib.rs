@@ -38,7 +38,8 @@ pub enum PreprocessorAST<'src> {
         ends: Box<Parsed<'src, PreprocessorAST<'src>>>,
     },
     EndIf,
-    Block(Arc<Vec<TokenItem<'src>>>),
+    ///This span is token indexes, not text positions
+    Block(SimpleSpan),
     Error,
 }
 impl<'src> ParseVisitable<'src> for PreprocessorAST<'src> {
@@ -109,13 +110,13 @@ fn body<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, Prepr
         .repeated()
         .at_least(1)
         .collect::<Vec<_>>()
-        .map(|items| {
+        .try_map(|items, span| {
             let start = items.first().unwrap().token.range.start;
             let end = items.last().unwrap().token.range.end;
-            Parsed::new(
+            Ok(Parsed::new(
                 SimpleSpan::new((), start..end),
-                PreprocessorAST::Block(Arc::new(items)),
-            )
+                PreprocessorAST::Block(span),
+            ))
         })
 }
 

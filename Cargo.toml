@@ -10,6 +10,6 @@ members = [
 "AST Generator/TokenIdentifier",
 "AST Generator/analyser",
 "E2E",
-"LSP", "Analyser", "v2stuff/parse_common", "v2stuff/preprocessor/preprocessor_parser", "v2stuff/core/mod_loader", "v2stuff/preprocessor/preprocessor", "v2stuff/core/compiler_state", "v2stuff/core/rsquirrel_cli", "v2stuff/language_server", "v2stuff/core/mod_tools",
+"LSP", "Analyser", "v2stuff/parse_common", "v2stuff/preprocessor/preprocessor_parser", "v2stuff/core/mod_loader", "v2stuff/preprocessor/preprocessor", "v2stuff/core/compiler_state", "v2stuff/core/rsquirrel_cli", "v2stuff/language_server", "v2stuff/core/mod_tools", "v2stuff/analyser/runner",
 
 ]

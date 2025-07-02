@@ -34,7 +34,7 @@ impl Preprocessor{
 
     pub fn identify_valid_states(&self, runon: &str, ast: &PreprocessedAST) -> Result<Vec<CompilerState>, String> {
         let tokens = sqparse::tokenize(runon, sqparse::Flavor::SquirrelRespawn).into_tokens();
-        let res = parse_expression(&tokens).
+        let res = parse_expression(&tokens).//TODO: Do i need to dedup this?
             map_err(|e| format!("Failed to parse runon expression \"{}\": {}", runon, e))?;
         let all_states = self.identify_file_states(&res.item, ast)?;
         /*let filter_states = all_states.into_iter()
@@ -132,6 +132,20 @@ impl Preprocessor{
             }
         }
         Ok(all_states)
+    }
+
+
+    /// This should ideally only be used in testing
+    pub fn to_state_primitive(&self, state: &str) -> CompilerState {
+        let mut terms = Vec::new();
+        for term in state.split(',') {
+            if let Some(stripped) = term.strip_prefix('!') {
+                terms.push(CompilerTerm::from_false(self.get_term(stripped.to_string())));
+            } else {
+                terms.push(CompilerTerm::from_true(self.get_term(term.to_string())));
+            }
+        }
+        CompilerState::new(terms)
     }
 }
 

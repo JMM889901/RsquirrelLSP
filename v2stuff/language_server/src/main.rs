@@ -1,10 +1,13 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::{collections::HashMap, sync::{Arc, RwLock}};
 
 use mod_loader::{fileinfo::LoadedFile, LoadConfig, ModLoader};
 use preprocessor::{PreprocessedScript, Preprocessor};
+use runner::Analyser;
 use tower_lsp::{jsonrpc::Result, lsp_types::{InitializeParams, InitializeResult, InitializedParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind}, Client, LanguageServer, LspService, Server};
 
+//Why am i even pubbing this? this isnt a library lmao
 pub mod files;
+pub mod viewpoints;
 
 /*
     Extension Requirements:
@@ -35,9 +38,11 @@ pub struct ConfigData {
 pub struct LastEditData {
     pub preprocessed: Vec<PreprocessedScript>
 }
+//TODO: This is some boilerplate for when i feel like config system and moving some stuff to on edit, i should probably do that.
 #[derive(Debug, Default)]
 pub struct LastSaveData {
-    pub preprocessed: Vec<PreprocessedScript>,
+    pub analyser: RwLock<Analyser>,
+    pub preprocessed: Arc<Vec<PreprocessedScript>>,
 }
 
 #[derive(Debug, Default)]

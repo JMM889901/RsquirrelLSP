@@ -8,7 +8,22 @@ use tower_lsp::lsp_types::{notification::Progress, ConfigurationItem, DidChangeW
 
 use crate::Backend;
 
-#[derive(Deserialize)]
+
+///TODO: This is overcomplicated, just because i required all "mods" to have an associated json, i should just refactor that away and remove all these pointless enums 
+#[derive(Deserialize, Debug, Clone)]
+enum WorkspaceSchema {
+    Local(String),
+    Git {
+        url: String,
+        branch: Option<String>,
+    },
+    Thunderstore {
+        url: String,
+        package: String,
+        version: Option<String>,
+    },
+}
+
 enum SqWorkspace {
     Mod(PathBuf),
     Vanilla(PathBuf, Vec<PathBuf>),
@@ -39,6 +54,22 @@ impl SqWorkspace {
 }
 
 impl Backend {
+    async fn to_workspace(
+        &self,
+        workspace: &WorkspaceSchema,
+    ) -> Result<SqWorkspace, String> {
+        match workspace {
+            WorkspaceSchema::Local(path) => {
+                let path = PathBuf::from(path);
+                if path.exists() {
+                    Ok(SqWorkspace::Mod(path))
+                } else {
+                    Err(format!("Local workspace path does not exist: {}", path.display()))
+                }
+            }
+            _ => todo!()
+        }
+    }
     /// Pull mods from configuration and active workspace
     async fn load_workspaces(&self) -> Vec<SqWorkspace> {
         let mut workspaces = Vec::new();
@@ -74,8 +105,13 @@ impl Backend {
 
         if let Ok(config) = config {
             for value in config {
-                match serde_json::from_value::<SqWorkspace>(value.clone()) {
-                    Ok(workspace) => workspaces.push(workspace),
+                match serde_json::from_value::<WorkspaceSchema>(value.clone()) {
+                    Ok(workspace) => {
+                        match self.to_workspace(&workspace).await {
+                            Ok(workspace) => workspaces.push(workspace),
+                            Err(e) => eprintln!("Failed to parse workspace from config {:?} : {}", value, e),
+                        }
+                    },
                     Err(e) => eprintln!("Failed to parse workspace from config {:?} : {}", value, e),
                 }
             }

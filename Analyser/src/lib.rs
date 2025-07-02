@@ -847,7 +847,7 @@ impl Debug for dyn AnalysisResultInternal {
 impl_downcast!(sync AnalysisResultInternal);
 
 pub trait AnalysisResult : AnalysisResultInternal + Sized {
-    fn get_errors(&self, context: &SQDistinctVariant) -> Vec<(usize, usize, String)> {
+    fn get_errors(&self, context: &SQDistinctVariant) -> Vec<(usize, usize, String)> {//TODO: make error object :>
         vec![]
     }
 }
@@ -858,7 +858,6 @@ impl<T: Sized> AnalysisResultInternal for T where T: AnalysisResult {
     fn as_any(&self) -> &dyn Any {
         self
     }
-
 }
 
 /// Steps should be stateless, or at least should reset the state when analyse is called

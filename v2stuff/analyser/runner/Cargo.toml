@@ -1,0 +1,12 @@
+[package]
+name = "runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rayon = "1.10.0"
+indexmap = "2.9.0"
+downcast-rs = "2.0.1"
+compiler_state = { path = "../../core/compiler_state" }
+mod_loader = { path = "../../core/mod_loader" }
+preprocessor = { path = "../../preprocessor/preprocessor" }

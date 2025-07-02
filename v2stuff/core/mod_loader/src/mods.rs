@@ -10,7 +10,8 @@ use crate::{fileinfo::{ExternalType, FileInfo, FileType, LoadedFile, ModScriptEn
 pub enum FileSource {
     DirectExternals(Arc<Vec<PathBuf>>),//TODO: Should each one be a seperate entry?
     Mod(Arc<Mod>),
-    Vanilla(Arc<VanillaFiles>)//Vanilla is split across multiple paths
+    Vanilla(Arc<VanillaFiles>),//Vanilla is split across multiple paths
+    Dummy//Testing, saves me effort later
 }
 impl From<Mod> for FileSource {
     fn from(mod_: Mod) -> Self {
@@ -38,6 +39,7 @@ impl Display for FileSource {
             FileSource::Mod(mod_) => write!(f, "Mod {{ name: {}, at: {} }}", mod_.name, mod_.mod_path.display()),
             FileSource::Vanilla(vanilla) => write!(f, "VanillaFiles {{ root: {} }}", vanilla.root.display()),
             FileSource::DirectExternals(externs) => write!(f, "Externals {{ count: {} }}", externs.len()),
+            FileSource::Dummy => write!(f, "Dummy"),
         }
     }
 }
@@ -54,6 +56,7 @@ impl FileSource {
                 }
                 buff
             }
+            FileSource::Dummy => "Dummy FileSource".to_string(),
         }
     }
     pub fn loads(&self) -> Box<dyn Iterator<Item = &ModScriptEntry> + '_> {
@@ -61,6 +64,7 @@ impl FileSource {
             FileSource::Mod(mod_) => Box::new(mod_.loads.iter()),
             FileSource::Vanilla(vanilla) => Box::new(vanilla.loads.iter()),
             FileSource::DirectExternals(_) => Box::new(std::iter::empty()), //No loads for direct externals
+            FileSource::Dummy => Box::new(std::iter::empty()),
         }
     }
     pub fn try_file(&self, to_load: &ModScriptEntry) -> Option<FileInfo> {
@@ -81,6 +85,12 @@ impl FileSource {
                 }
                 None
             }
+            FileSource::Dummy => {
+                //Dummy files are just for testing, so we can return a dummy path
+                Some(FileInfo::new(
+                    "Dummy".to_string(), PathBuf::from("Testing only stuff"), to_load.run_on.clone(), self.clone()
+                ))
+            }
         }
     }
     pub fn get_externs(&self) -> Vec<LoadedFile> {
@@ -96,6 +106,7 @@ impl FileSource {
                     file_type: FileType::Externals(ExternalType::Externals),
                 }).collect()
             }
+            FileSource::Dummy => Vec::new(), //No externals for dummy files
         }
     }
 }
@@ -144,6 +155,7 @@ pub struct Mod {
     pub loads: Vec<ModScriptEntry>,
     pub depstrings: HashMap<String, String>,
 }
+
 
 impl Display for Mod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

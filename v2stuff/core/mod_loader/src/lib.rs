@@ -40,6 +40,7 @@ impl LoadConfig {
                 self.disabled_names.contains(&"scripts.rson".into()) ||
                 self.disabled_paths.contains(&files.root)
             }
+            FileSource::Dummy => false, 
         }
     }
 }
