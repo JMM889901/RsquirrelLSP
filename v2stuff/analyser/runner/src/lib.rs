@@ -7,10 +7,10 @@ use std::fmt::{Debug, Display};
 use crate::{analysis_error::AnalysisError, cache::DowncastableCache, results::DowncastableResults, step::{AnalysisStep, DowncastableStepInfo, PreserveType, StepInfo}, tree::DowncastableData};
 
 mod runner;
-mod step;
+pub mod step;
 mod tree;
-mod results;
-mod analysis_error;
+pub mod results;
+pub mod analysis_error;
 mod query;
 mod cache;
 
@@ -136,13 +136,13 @@ mod messing_around {
     }
 
     struct FirstTestStep{}
-    impl AnalysisStep<Result1> for FirstTestStep {
+    /*impl AnalysisStep<Result1> for FirstTestStep {
         fn analyse(&self, context: &AnalysisContext) -> Result<Result1, AnalysisError> {
             Ok(format!("First step for variant {} in analyser {:?}", context, context.analyser).into())
         }
-    }
+    }*/
     struct SecondTestStep{}
-    impl AnalysisStep<Result2> for SecondTestStep {
+    /*impl AnalysisStep<Result2> for SecondTestStep {
         fn analyse(&self, context: &AnalysisContext) -> Result<Result2, AnalysisError> {
             let old: Arc<Result1> = context.get_own_result()?;
             println!("Got old result: {}", old.0); 
@@ -152,7 +152,7 @@ mod messing_around {
         fn depends_on(&self) -> Vec<TypeId> {
             vec![TypeId::of::<Result1>()] //This step depends on Result1, so it should run after it
         }
-    }
+    }*/
 
     #[test]
     fn test_analyser() {
@@ -177,8 +177,8 @@ mod messing_around {
             cached_queries: RwLock::new(HashMap::new()),
             errors: RwLock::new(vec![]),
         };
-        analyser.insert_step(SecondTestStep {}, PreserveType::Never);
-        analyser.insert_step(FirstTestStep {}, PreserveType::Before);
+        /*analyser.insert_step(SecondTestStep {}, PreserveType::Never);
+        analyser.insert_step(FirstTestStep {}, PreserveType::Before);*/
         //^These should be sorted into the right order
         let _ = analyser.run_steps();
         let results1 = analyser.get_results::<Result1>().unwrap();

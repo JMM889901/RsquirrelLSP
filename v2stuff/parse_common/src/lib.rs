@@ -6,7 +6,6 @@ use sqparse::{token::{TerminalToken, TokenType}, TokenItem};
 use crate::{errors::{expected::{ExpectedArbitary, ExpectedNoMatch}, unknown::UnexpectedToken}, parsed_element::{Expectable, Parsed}};
 
 mod as_trait;
-
 pub mod parse_state;
 pub mod errors;
 pub mod parsed_element;

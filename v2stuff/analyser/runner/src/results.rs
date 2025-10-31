@@ -48,7 +48,7 @@ impl Analyser {
 
 //I was going to allow custom ones of these hence the trait, but thats a lot of work for something nobody will use
 pub trait DowncastableResults : DowncastSync{}
-pub trait AnalysisResult : DowncastSync + Send + Sync + 'static {}
+pub trait AnalysisResult : 'static + Send + Sync {}
 impl_downcast!(sync DowncastableResults);
 pub struct AnalysisResults<T: AnalysisResult> {
     pub results: Vec<Option<Arc<T>>>,

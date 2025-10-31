@@ -83,6 +83,7 @@ impl ModLoader {
         self.initialize_with_config(config)
     }
     /// In the future, I intend for it to be possible to load multiple configs, hence why this finds everything THEN filters it
+    /// Identifies the overall set of files to load, this does not SEARCH for these files
     pub fn initialize_with_config(&mut self, config: LoadConfig) -> (LoadOrder, Vec<ModLoadError>) {
         let mut errors = Vec::new();
         let mut load_order = IndexMap::new();
@@ -129,6 +130,10 @@ impl ModLoader {
                 m.clone()
             }).rev().collect::<Vec<_>>();
         //First mod that has the thing is also the highest priority this way
+
+        
+        //I havent touched this code in a few months and like
+        //What the fuck does any of this do?
         for (idx, (source_mod, to_load)) in config.loaded.iter().enumerate() {
             let mut found = false;
             for m in to_search.iter() {

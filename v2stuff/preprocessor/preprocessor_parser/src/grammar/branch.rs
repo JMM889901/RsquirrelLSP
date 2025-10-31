@@ -30,7 +30,7 @@ fn else_if_block<'src>() -> impl Parser<
         Parsed<'src, PreprocessorExpression<'src>>,
     ),
 > {
-    let else_preproc = accept(TerminalToken::PreprocessorElse, any_preproc_token());
+    let else_preproc = accept(TerminalToken::PreprocessorElseIf, any_preproc_token());
     else_preproc.then(expression_parser())
 }
 

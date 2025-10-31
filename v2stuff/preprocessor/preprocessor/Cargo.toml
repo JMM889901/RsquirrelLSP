@@ -9,4 +9,4 @@ preprocessor_parser = { path = "../preprocessor_parser" }
 parse_common = { path = "../../parse_common" }
 mod_loader = { path = "../../core/mod_loader" }
 sqparse = { path = "../../sqparse_errec/sqparse" }
-chumsky = "0.10.1"
+chumsky = "0.11.1"

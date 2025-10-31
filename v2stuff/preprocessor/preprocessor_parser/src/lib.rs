@@ -115,7 +115,7 @@ fn body<'src>() -> impl Parser<'src, &'src [TokenItem<'src>], Parsed<'src, Prepr
             let end = items.last().unwrap().token.range.end;
             Ok(Parsed::new(
                 SimpleSpan::new((), start..end),
-                PreprocessorAST::Block(span),
+                PreprocessorAST::Block(SimpleSpan::new((), span.start..span.end)),
             ))
         })
 }
@@ -203,7 +203,8 @@ mod testing {
             #if DEV
             int y = 3;
             #else
-            int x = 1;
+            int x = 1
+            bool false = 1 == 2
             #endif
             #endif
         #endif";
@@ -225,6 +226,14 @@ mod testing {
         for err in errs {
             println!("Error: {}", err.text());
             println!("Range: {:?}", err.range());
+        }
+    }
+    #[test]
+    fn token_check() {
+        let text = "true == false";
+        let tokens = sqparse::tokenize(text, sqparse::Flavor::SquirrelRespawn).into_tokens();
+        for token in tokens {
+            println!("Token: {:?} Text: {}", token.token, &text[token.token.range.clone()]);
         }
     }
 }

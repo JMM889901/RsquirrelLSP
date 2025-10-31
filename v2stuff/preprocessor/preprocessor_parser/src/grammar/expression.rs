@@ -5,15 +5,14 @@ End goal is to be able to parse (and report as errors):
 */
 
 use chumsky::{
-    prelude::{choice, recursive},
-    Boxed, Parser,
+    error::EmptyErr, prelude::{choice, recursive}, Boxed, Parser
 };
 use parse_common::{
     accept, identifier,
     parsed_element::{default_parsed, Parsed, Substitute},
     terminal, then_expect, then_expect_named,
 };
-use sqparse::{token::TerminalToken, TokenItem};
+use sqparse::{ast::Identifier, token::{LiteralToken, TerminalToken}, TokenItem};
 
 use crate::statements::PreprocessorExpression;
 
@@ -128,7 +127,52 @@ pub fn expression_parser<'src>(
                     start.map_item(|_| PreprocessorExpression::Bracketed(Box::new(inner)))
                 })
                 .boxed(),
-        ))
+        )).then(explicit_bool_parser().or_not()).map(
+            |(left, right)| {
+                if let Some(right) = right {
+                    if right.item {
+                        left
+                    } else {
+                        left.map_item(|expr| PreprocessorExpression::Not(Box::new(
+                            Parsed::new(right.range, expr)
+                        )))
+                    }
+                } else {
+                    left
+                }
+            }
+        )
     })
     .boxed()
+}
+
+//Stupid that i need to do this
+//But like 3 whole files use X == true instead of just X 
+pub fn explicit_bool_parser<'src>(
+) -> Boxed<'src, 'src, &'src [TokenItem<'src>], Parsed<'src, bool>> {
+    let equal = accept(TerminalToken::Equal, terminal());
+    let not_equal = accept(TerminalToken::NotEqual, terminal());
+    let true_literal = identifier().try_map(
+        |s: Parsed<'_, String>, span| {
+            if s.item.to_lowercase() == "true" {
+                Ok(Parsed::new(s.range, true))
+            } else if s.item.to_lowercase() == "false" {
+                Ok(Parsed::new(s.range, false))
+            } else {
+                Err(EmptyErr::default())
+            }
+        }
+    ).boxed();
+    let equalto = equal.or(not_equal).then(true_literal.clone());
+    equalto
+        .map(|(op, val)| {
+            let mut op = op;
+            op.range.end = val.range.end;
+            op.map_item(|token| match token {
+                TerminalToken::Equal => val.item,
+                TerminalToken::NotEqual => !val.item,
+                _ => unreachable!(),
+            })
+        })
+        .boxed()
 }

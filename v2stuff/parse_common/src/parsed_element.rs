@@ -1,7 +1,7 @@
 use std::{cmp::max, fmt::Debug};
 
 use chumsky::span::SimpleSpan;
-use sqparse::{token::TerminalToken, TokenItem};
+use sqparse::{ast::Identifier, token::TerminalToken, TokenItem};
 
 use crate::errors::{expected::Expected, substitute::Substituted, DefaultErrorRank, ErrorRank, ParseError};
 
@@ -11,6 +11,11 @@ pub trait StringToken {
 impl StringToken for TerminalToken {
     fn as_string(&self) -> String {
         self.as_str().to_string()
+    }
+}
+impl StringToken for Identifier<'_> {
+    fn as_string(&self) -> String {
+        self.value.to_string()
     }
 }
 impl StringToken for TokenItem<'_> {
@@ -169,6 +174,12 @@ pub trait Expectable : StringToken + Debug + Send + Sync {
 impl Expectable for TerminalToken {
     fn matches(&self, item: &Self) -> bool {
         self == item
+    }
+}
+
+impl Expectable for Identifier<'_> {
+    fn matches(&self, item: &Self) -> bool {
+        self.value == item.value
     }
 }
 

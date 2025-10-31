@@ -73,14 +73,14 @@ impl FileSource {
             FileSource::Mod(_mod) => {
                 if let Some(path) = _mod.try_file(to_load) {
                     return Some(FileInfo::new(
-                            _mod.name.clone(), path, to_load.run_on.clone(), self.clone()
+                            path.file_name().unwrap().to_string_lossy().into_owned(), path, to_load.run_on.clone(), self.clone()
                 ));}
                 None
             }
             FileSource::Vanilla(vanilla) => {
                 if let Some(path) = vanilla.try_file(to_load) {
                     return Some(FileInfo::new(
-                        "Vanilla".to_string(), path, to_load.run_on.clone(), self.clone()
+                        path.file_name().unwrap().to_string_lossy().into_owned(), path, to_load.run_on.clone(), self.clone()
                     ));
                 }
                 None

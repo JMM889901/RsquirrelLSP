@@ -2,6 +2,9 @@ use chumsky::{combinator::Then, extra::{self, ParserExtra}, input::Input, prelud
 
 mod expectable;
 mod err_builder;
+mod objects;
+pub use objects::errors::ParseError;
+pub use objects::errors::ParseErrorDyn;
 
 pub trait ParserExt<'a, In: Input<'a>, Out, Extra: ParserExtra<'a, In> = extra::Default> : Parser<'a, In, Out, Extra> {
     fn test<U, B: Parser<'a, In, U, Extra>>(self, other: B) -> Then<Self, B, Out, U, Extra>

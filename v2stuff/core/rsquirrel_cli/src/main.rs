@@ -7,7 +7,9 @@ fn main() {
 
 #[cfg(test)]
 mod tests{
+    use preprocessor::{ASTTokenIndexIter, ASTTokenIter};
     use rayon::prelude::*;
+    use sqparse::{parse, parse_iter};
     use std::{collections::HashMap, path::PathBuf};
 
     use mod_loader::{fileinfo::{FileInfo, FileType, LoadedFile}, mods::Mod, LoadConfig, ModLoader};
@@ -79,13 +81,16 @@ fn test_northstar() {
                     println!("Variant ID: {}", v.id.state);
                     println!("Variant blocks: {}", v.blocks.len());
                     //println!("Variant Text: {}\n\n", v.to_text());
+
                 }
+                
             },
             Err(e) => {
                 eprintln!("Error preprocessing file: {}", e);
                 panic!("Failed to preprocess file: {}", e);
             }
         }
+        
     }
     for err in load_errs {
         eprintln!("Error loading file: {:?}", err);
@@ -94,6 +99,8 @@ fn test_northstar() {
     for term in preprocessor.term_map.read().unwrap().iter() {
             println!("Term: {}", term);
     }
+
+    
 
 }
 #[test]
@@ -115,7 +122,6 @@ fn test_vanilla() {
         println!("{}", _mod.long_text());
     }
     let end = std::time::Instant::now();
-    println!("Time taken to register mods: {:?}", end.duration_since(start));
     let (unfiltered_files, load_errs) = loader.load();
     let iter = unfiltered_files.par_iter();
     let preprocessor = preprocessor::Preprocessor::new();
@@ -124,7 +130,9 @@ fn test_vanilla() {
             preprocessor.preprocess_file(file.clone())
         }
     ).collect::<Vec<_>>();
-    for variant in variants {
+    let mut count = 0;
+    let analysis_start = std::time::Instant::now();
+    for variant in &variants {
         match variant {
             Ok(preproc) => {
                 println!("Preprocessed file: {}", preproc.file.file_info.path().to_string_lossy());
@@ -135,9 +143,42 @@ fn test_vanilla() {
                     panic!("valid states: {:?}", preprocessor.identify_valid_states(preproc.file.file_info.run_on(), preproc.ast.as_ref()).unwrap());
                 }
                 for v in preproc.variants.clone().iter() {
+                    count += 1;
                     println!("Variant ID: {}", v.id.state);
                     println!("Variant blocks: {}", v.blocks.len());
+                    for block in v.blocks.iter() {
+                        if block.items.start < preproc.tokens().len() {
+                            let tok = &preproc.tokens()[block.items.start];
+                            assert!(!matches!(tok.token.ty, sqparse::token::TokenType::Terminal(sqparse::token::TerminalToken::PreprocessorIf)), "Block starts with preprocessor if: {:?}", tok);
+                        }
+                    }
                     //println!("Variant Text: {}\n\n", v.to_text());
+                    let mut combined = v.blocks.iter().flat_map(|b| b.items.into_range()).collect::<Vec<usize>>();
+                    combined.push(preproc.tokens().len());
+                    let mut dedup = combined.clone();
+                    dedup.dedup();
+                    assert!(dedup.len() == combined.len());
+                    
+                    let tokeniter = ASTTokenIndexIter::from(&combined, preproc);
+                    //let tokeniter = ASTTokenIter::from(v, preproc);
+                    if tokeniter.is_none() {
+                        eprintln!("variant of {} with 0 blocks: {}", preproc.file.file_info.path().display(), v.id.state);
+                        continue;
+                    }
+                    let parse = parse_iter(tokeniter.unwrap());
+                    match parse {
+                    Ok(program) => eprintln!("Parsed program with {} statements", program.statements.len()),
+                    Err(err) => {
+                        let mut idx = err.token_index;
+                        if idx >= preproc.tokens().len() {
+                            idx = preproc.tokens().len() - 1;
+                            eprintln!("Error token index {} out of bounds, using last token", err.token_index);
+                        }
+                        let realpos = preproc.tokens()[idx].token.range.clone();
+                        let real = &preproc.text()[realpos.clone()];
+                        eprintln!("Error parsing script {}: {:?} at {:?} text: {:?}", preproc.path().display(), err, realpos, real);
+                    }
+                }
                 }
             },
             Err(e) => {
@@ -146,6 +187,19 @@ fn test_vanilla() {
             }
         }
     }
+    let analysis_end = std::time::Instant::now();
+    println!("Time taken to analyze mods: {:?}", analysis_end.duration_since(analysis_start));
+    println!("Time taken to register mods: {:?}", end.duration_since(start));
+    println!("Total variants: {}", count);
+    let regular_parse_start = std::time::Instant::now();
+    let mut count = 0;
+    for v in variants.into_iter().flatten() {
+        count += 1;
+        let tok = v.tokens();
+        let prs = parse(tok, sqparse::Flavor::SquirrelRespawn);
+    }
+    let regular_parse_end = std::time::Instant::now();
+    println!("Without preprocesing, took {:?} to parse {} files", regular_parse_end.duration_since(regular_parse_start), count);
     for err in load_errs {
         eprintln!("Error loading file: {:?}", err);
     }
@@ -155,7 +209,7 @@ fn test_vanilla() {
     }
 }
 #[test]
-fn test_vanilla_overrided() {
+fn test_overriden_vanilla() {
     let vanilla_path = PathBuf::from("../../../../Titanfall2-master");
     let northstar_path = PathBuf::from("../../../../northstar");
     let mut loader = ModLoader::new();
@@ -182,6 +236,9 @@ fn test_vanilla_overrided() {
 
     let _items = unfiltered_files.iter().find(|item| item.file_info.name() == "_items.nut");
     if _items.is_none() {
+        for item in unfiltered_files.iter() {
+            println!("File: {}", item.file_info.name());
+        }
         panic!("Failed to find items.nut in unfiltered files");
     }
     let items = _items.unwrap();
@@ -190,6 +247,55 @@ fn test_vanilla_overrided() {
     println!("Took {:?} to load vanilla scripts", load_vanilla_end.duration_since(load_vanilla_start));
     println!("Took {:?} to load northstar mods", load_northstar_end.duration_since(load_northstar_start));
     println!("Took {:?} to get files", load_mods_end.duration_since(load_mods_start));
+
+
+    let preprocessor = preprocessor::Preprocessor::new();
+    let preproc_start = std::time::Instant::now();
+    let preproc = unfiltered_files.par_iter().map(
+        |file: &LoadedFile| {
+            preprocessor.preprocess_file(file.clone())
+        }
+    ).collect::<Vec<_>>();
+    for preproc in preproc {
+        match &preproc {
+            Ok(preproc) => {
+                for v in preproc.variants.clone().iter() {
+                    let mut combined = v.blocks.iter().flat_map(|b| b.items.into_range()).collect::<Vec<usize>>();
+                    combined.push(preproc.tokens().len());
+                    let mut dedup = combined.clone();
+                    dedup.dedup();
+                    assert!(dedup.len() == combined.len());
+                    
+                    let tokeniter = ASTTokenIndexIter::from(&combined, preproc);
+
+                    if tokeniter.is_none() {
+                        eprintln!("variant of {} with 0 blocks: {}", preproc.file.file_info.path().display(), v.id.state);
+                        continue;
+                    }
+                    let parse = parse_iter(tokeniter.unwrap());
+                    match parse {
+                        Ok(program) => (),//eprintln!("Parsed program with {} statements", program.statements.len()),
+                        Err(err) => {
+                            let mut idx = err.token_index;
+                            if idx >= preproc.tokens().len() {
+                                idx = preproc.tokens().len() - 1;
+                                eprintln!("Error token index {} out of bounds, using last token", err.token_index);
+                            }
+                            let realpos = preproc.tokens()[idx].token.range.clone();
+                            let real = &preproc.text()[realpos.clone()];
+                            eprintln!("Error parsing script {}: {:?} at {:?} text: {:?}", preproc.file.file_info.path().display(), err, realpos, real);
+                        }
+                    }   
+                }
+            },
+            Err(e) => {
+                eprintln!("Error preprocessing file: {}", e);
+                panic!("Failed to preprocess file: {}", e);
+            }
+        }
+        
+    }
+    let preproc_end = std::time::Instant::now();
 }
 
 #[test]
@@ -250,7 +356,7 @@ fn test_preprocessing() {
         file_type: mod_loader::fileinfo::FileType::Script,
         file_info: mock_info,
     };
-    let split = preprocessor.split_ast(&parsed, valid.unwrap(), &mock_file);
+    let split = preprocessor.split_ast(&parsed, valid.unwrap(), &mock_file, tokens.len());
     for variant in split {
         println!("Variant ( {} ):\n {}\n\n", variant.id.state, variant.to_text());
     }
@@ -262,4 +368,24 @@ fn test_preprocessing() {
         println!("Variant Text: \n{}\n\n", variant.to_text());
     }
 }
+
+
+#[test]
+fn sqparse_test() {
+    let text = "
+    void function test() {
+        int x = 1;
+    }
+
+    struct thing {
+    int a
+    }
+    ";
+    let tokens = sqparse::tokenize(text, sqparse::Flavor::SquirrelRespawn).into_tokens();
+    let ast = sqparse::parse(&tokens, sqparse::Flavor::SquirrelRespawn);
+    println!("Tokens: {:#?}", ast);
+    
+}
+
+
 }

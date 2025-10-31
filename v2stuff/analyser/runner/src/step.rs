@@ -81,7 +81,7 @@ impl Analyser {
 /// Steps may get the results of prior runs, but should not get the results of its own run for other files, or future runs
 pub trait AnalysisStep<T> : Sync + Send + 'static {
     fn analyse(&self, context: &AnalysisContext) -> Result<T, AnalysisError>;
-        fn step_name(&self) -> String {
+    fn step_name(&self) -> String {
         std::any::type_name::<Self>().to_string()
     }
     /// A list of typeids for the RETURN types of steps that must run before this step

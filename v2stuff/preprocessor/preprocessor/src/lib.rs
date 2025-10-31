@@ -1,11 +1,11 @@
-use std::{fmt::Display, path::PathBuf, sync::{Arc, RwLock}};
+use std::{collections::btree_map::Range, fmt::Display, path::PathBuf, sync::{Arc, RwLock}};
 
 use chumsky::{input::Input, span::SimpleSpan};
 use compiler_state::{term::{CompareResult, KnownTerm}, CompilerState};
 use mod_loader::fileinfo::{FileType, LoadedFile};
 use parse_common::parsed_element::Parsed;
 use preprocessor_parser::{parse_expression, PreprocessedAST, PreprocessorAST};
-use sqparse::{Flavor, TokenItem, TokenIter};
+use sqparse::{token::TerminalToken, Flavor, TokenItem, TokenIter};
 
 use crate::predictor::evaluate_state;
 
@@ -38,6 +38,9 @@ impl Preprocessor {
             //I do not care any more (assuming it works, which it probably wont :)  )
             //TODO: Un-lifetime everything if possible, the ast SHOULD own the input, but chumsky really *really* hates that
             //I would rather not have to clone everything so
+            //^Slightly future me here to point out that this is entirely my own fault, errors are kinda bound to the lifetime of the input since they contain borrows to it
+            //I kinda just, don't care any more? 
+            //This is *extremely* unsafe and bad, tough shit.
             let ast: Vec<Parsed<'_, PreprocessorAST<'_>>> = preprocessor_parser::preprocess(&tokens.tokens)
                 .map_err(|e| format!("Failed to preprocess file with name\"{}\": {}", file.file_info.name(), e))?;
             let ast: Vec<Parsed<'_, PreprocessorAST<'_>>> = unsafe {
@@ -47,7 +50,7 @@ impl Preprocessor {
             let states = self.identify_valid_states(file.file_info.run_on(), &ast)
                 .map_err(|e| format!("Failed for find states for {}: {}", file.file_info.path().to_string_lossy(), e))?;
 
-            let variants = self.split_ast(&ast, states, &file);
+            let variants = self.split_ast(&ast, states, &file, tokens.tokens.len());
 
             let preproc = PreprocessedScript {
                 file,
@@ -143,6 +146,7 @@ impl VariantID {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block{
+    ///IMPORTANT: Items.end is the trailing index, so it will likely be a preprocessor token
     pub items: SimpleSpan,
     pub range: std::ops::Range<usize>, //This is the range of the block in the original text
 }
@@ -172,25 +176,52 @@ impl PreprocessedScript {
 pub struct ASTTokenIter<'a> {
     pub tokens: &'a [TokenItem<'a>],
     pub blocks: &'a [Block],
+    pub block: &'a Block,
     pub index: (usize, usize), // (block_index, item_index)
 }
 impl<'a> ASTTokenIter<'a> {
-    pub fn from(varaint: &'a PreprocessedVariant, file: &'a PreprocessedScript) -> Self {
-        ASTTokenIter { tokens: file.tokens.tokens.as_slice(), 
+    pub fn from(varaint: &'a PreprocessedVariant, file: &'a PreprocessedScript) -> Option<Self> {
+        Some(ASTTokenIter { tokens: file.tokens.tokens.as_slice(), 
             blocks: &varaint.blocks, 
             index: (
                 0, 
                 varaint.blocks.first()
                     .map_or(0, |x| x.items.start)
-            ) 
-        }
+            ),
+            block: varaint.blocks.last()?,
+        })
     }
 }
+
+
+#[derive(Debug, Clone, Copy)]
+pub struct ASTTokenIndexIter<'a> {
+    pub tokens: &'a [TokenItem<'a>],
+    pub mapped_positions: &'a [usize],
+    pub index: usize,
+}
+impl<'a> ASTTokenIndexIter<'a> {
+    pub fn from_variant(varaint: &'a PreprocessedVariant, file: &'a PreprocessedScript) -> Option<Self> {
+        Some(ASTTokenIndexIter { tokens: file.tokens.tokens.as_slice(), 
+            mapped_positions: &varaint.index_map,
+            index: 0,
+        })
+    }
+    pub fn from(block_map: &'a [usize], file: &'a PreprocessedScript) -> Option<Self> {
+        Some(ASTTokenIndexIter { tokens: file.tokens.tokens.as_slice(), 
+            mapped_positions: block_map,
+            index: 0,
+        })
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreprocessedVariant {
     pub id: VariantID,
+    //TODO: Pick, either blocks of tokens, or a map of token indexes
     pub blocks: Vec<Block>,
+    pub index_map: Vec<usize>,
 }
 impl PreprocessedVariant {
     pub fn to_text(&self) -> String {
@@ -267,13 +298,9 @@ impl<'a> Input<'a> for &'a ASTTokenIter<'a> {
         //I might have to make Self::Span a span of span which like, ew
     }
 }
-/// Let this be proof that i WANTED to use sqparse
-/// But alas sqparse delegates locating the end of a scope to the lexer, 
-/// Which does not account for preprocessing stuff
-/// So i can't actually trust sqparse for these cases
-/// In short
-/// 
-/// Boo (And i cannot stress this enough) womp
+/// This is a stupidly bad way to do this
+/// Since like, this just drops shit constantly
+/// it probably should just self mutate
 impl<'a> TokenIter<'a> for ASTTokenIter<'a> {
     fn flavor(self) -> Flavor {
         Flavor::SquirrelRespawn
@@ -281,6 +308,7 @@ impl<'a> TokenIter<'a> for ASTTokenIter<'a> {
 
     fn previous(self) -> Option<&'a TokenItem<'a>> {
         let idx = self.previous_index()?;
+
         self.tokens.get(idx)
         
     }
@@ -303,15 +331,21 @@ impl<'a> TokenIter<'a> for ASTTokenIter<'a> {
             .unwrap_or(false)
     }
 
-    fn split_first(self) -> Option<(Self, &'a TokenItem<'a>)> {
-        if let Some(item) = self.tokens.get(self.index.1) {
-            let next_index = self.next_index(self.index)?;
-            let next_iter = ASTTokenIter {
-                tokens: self.tokens,
-                blocks: self.blocks,
-                index: next_index,
-            };
-            Some((next_iter, item))
+    fn split_first(mut self) -> Option<(Self, &'a TokenItem<'a>)> {
+        if let Some(item) = self.next() {
+
+            let next_index = self.next_index(self.index);
+            match next_index {
+                Some(index) => {
+                    self.block = &self.blocks[index.0];
+                    self.index = index;
+                },
+                None => {
+                    self.block = &self.blocks[self.blocks.len() - 1];
+                    self.index = (self.blocks.len(), self.tokens.len() + 1);
+                }
+            }
+            Some((self, item))
         } else {
             None
         }
@@ -338,48 +372,98 @@ impl<'a> TokenIter<'a> for ASTTokenIter<'a> {
         (
             ASTTokenIter {
                 index: self.index,
-                tokens: &self.tokens[..index],//Sketchy
+                tokens: self.tokens,//Sketchy
                 blocks: self.blocks,//Sketchy
+                block: self.block,
             },
             ASTTokenIter {
                 index: (*block, index),
                 tokens: self.tokens,
                 blocks: self.blocks,
+                block: &self.blocks[*block],
+
             },
         )
         
     }
 
-    fn previous_index(&self) -> Option<usize> {
-        let index = self.index;
-        let block = &self.blocks.get(index.0)?;
-        if index.1 > block.items.start {
-            Some(index.1 - 1)
-        } else if index.1 == block.items.start {
-            if index.0 > 0 {
-                let prev_block = &self.blocks[index.0 - 1];
-                Some(prev_block.items.end)
-            } else {
-                None
-            } 
-        } else if index.1 > 0 {
-            eprintln!("Index {:?} has become disconnected from block {:?}", index, self.blocks[index.0].items);
-            Some(index.1-1)
-        } else {
-            None
-        }
-    }
+
 }
 impl ASTTokenIter<'_> {
     pub fn next_index(&self, index: (usize, usize)) -> Option<(usize, usize)> {
-        let block = &self.blocks.get(index.0)?;
-        if index.1 < block.items.end {
-            Some((index.0, index.1 + 1))
-        } else if index.0 + 1 < self.blocks.len() {
-            Some((index.0 + 1, self.blocks[index.0 + 1].items.start))
+        if index.1 < self.block.items.end {
+            return Some((index.0, index.1 + 1))
+        }
+        Some((index.0 + 1, self.blocks.get(index.0 + 1)?.items.start))
+
+    }
+
+    fn previous_index(&self) -> Option<usize> {
+        let block = self.blocks.get(self.index.0)?;
+        if self.index.1 > block.items.start {
+            Some(self.index.1 - 1)
+        } else if self.index.1 == block.items.start {
+            if self.index.0 > 0 {
+                let prev_block = &self.blocks[self.index.0 - 1];
+                Some(prev_block.items.end)
+            } else {
+                None
+            }
+        } else if self.index.1 > 0 {
+            eprintln!("Index {:?} has become disconnected from block {:?}", self.index, self.blocks[self.index.0].items);
+            Some(self.index.1 - 1)
         } else {
             None
         }
     }
 
+}
+
+impl<'a> TokenIter<'a> for ASTTokenIndexIter<'a> {
+    fn flavor(self) -> Flavor {
+        Flavor::SquirrelRespawn
+    }
+
+    fn previous(self) -> Option<&'a TokenItem<'a>> {
+        if self.index == 0 {
+            return None;
+        }
+        self.tokens.get(self.mapped_positions[self.index - 1])
+    }
+
+    fn next(self) -> Option<&'a TokenItem<'a>> {
+        self.tokens.get(self.mapped_positions[self.index])
+    }
+
+    fn is_ended(self) -> bool {
+        self.index + 1 >= self.mapped_positions.len()
+    }
+
+    fn start_index(self) -> usize {
+        self.mapped_positions[self.index]
+    }
+
+    fn is_newline(self) -> bool {
+        self.previous()
+            .map(|item| item.token.new_line.is_some())
+            .unwrap_or(false)
+    }
+
+    fn split_first(mut self) -> Option<(Self, &'a TokenItem<'a>)> {
+        if let Some(item) = self.next() {
+            self.index += 1;
+            Some((self, item))
+        } else {
+            None
+        }
+    }
+
+    fn split_at(self, index: usize) -> (Self, Self) {
+        let second = ASTTokenIndexIter {
+            tokens: self.tokens,
+            mapped_positions: self.mapped_positions,
+            index
+        };
+        (self, second)
+    }
 }

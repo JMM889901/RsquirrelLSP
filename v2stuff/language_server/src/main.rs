@@ -5,9 +5,16 @@ use preprocessor::{PreprocessedScript, Preprocessor};
 use runner::Analyser;
 use tower_lsp::{jsonrpc::Result, lsp_types::{InitializeParams, InitializeResult, InitializedParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind}, Client, LanguageServer, LspService, Server};
 
+use crate::runners::parser::ParserStep;
+
 //Why am i even pubbing this? this isnt a library lmao
 pub mod files;
 pub mod viewpoints;
+mod file_edits;
+//TODO: This should be its own crate probably
+pub mod runners;
+
+
 
 /*
     Extension Requirements:
@@ -33,6 +40,14 @@ pub struct ConfigData {
     pub files: Vec<LoadedFile>,
     pub last_edit: Option<LastEditData>,
     pub last_save: LastSaveData,
+}
+impl ConfigData {
+    pub fn build_analyser(&self) -> Analyser {
+        //Eventually, this will apply various config stuff here
+        let mut analyser = Analyser::default();
+        analyser.insert_step(ParserStep{}, runner::step::PreserveType::Unchanged);
+        analyser
+    }
 }
 #[derive(Debug, Default)]
 pub struct LastEditData {

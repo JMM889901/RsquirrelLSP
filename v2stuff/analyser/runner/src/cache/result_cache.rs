@@ -40,6 +40,10 @@ pub trait DowncastableCache: DowncastSync {
 impl_downcast!(sync DowncastableCache);
 impl<T: AnalysisResult> DowncastableCache for CachedResults<T> {
     fn guestimate_memory_usage(&self) -> usize {
-        
+        let results = self.results.read().unwrap();
+        results.iter().map(|(state, data)| {
+            let size = std::mem::size_of_val(state) + data.guestimate_memory_usage();
+            size
+        }).sum()
     }
 }

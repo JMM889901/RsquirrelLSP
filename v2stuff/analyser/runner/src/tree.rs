@@ -23,6 +23,17 @@ impl_downcast!(sync DowncastableData);
 ///^So i can cache these 
 impl<T: Send + Sync + 'static> DowncastableData for VariantData<T> {}
 
+impl<T> VariantData<T> {
+    pub fn guestimate_memory_usage(&self) -> usize {
+        match self {
+            VariantData::Multi(vec) => vec.iter().map(|(v, _, data)| std::mem::size_of_val(v) + std::mem::size_of_val(data)).sum(),
+            VariantData::Possible(vec, bad) => vec.iter().map(|(v, _, data)| std::mem::size_of_val(v) + std::mem::size_of_val(data)).sum::<usize>() + bad.iter().map(|s| std::mem::size_of_val(s)).sum::<usize>(),
+            VariantData::Single(v, _, data) => std::mem::size_of_val(v) + std::mem::size_of_val(data),
+            VariantData::NonePreserving(id, state) => std::mem::size_of_val(id) + std::mem::size_of_val(state),
+            VariantData::None => 0,
+        }
+    }
+}
 
 impl<T: Clone> Clone for VariantData<T> {
     fn clone(&self) -> Self {

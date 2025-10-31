@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use mod_loader::LoadConfig;
-use preprocessor::{analyser, ASTTokenIter, PreprocessedScript};
+use preprocessor::{analyser, ASTTokenIndexIter, ASTTokenIter, PreprocessedScript};
 use rayon::iter::{Either, IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 use runner::Analyser;
+use sqparse::{parse, parse_iter};
 use tower_lsp::lsp_types::{notification::Progress, MessageType};
 
 use crate::{Backend, ConfigData, LastSaveData};
@@ -39,7 +40,6 @@ impl Backend {
             self.preprocessor.preprocessor.preprocess_file(file.clone()).map_or_else(Either::Right, Either::Left)
         });
         self.report_progress(token.clone(), format!("Preprocessed {} files", res.len())).await;
-        let res = Arc::new(res);
         for err in errs {
             self.client.log_message(MessageType::ERROR, format!("Error preprocessing file: {}", err)).await;
         }
@@ -54,13 +54,13 @@ impl Backend {
             ),
         }).await;
 
-        let clone = res.clone();
+        let res = Arc::new(res);
         let mut analyser = Analyser::default();
-        analyser.push_files(clone);
+        analyser.push_files(res.clone());
 
         let config = LoadConfig::default();//TODO: if i choose to do configs this way, change this
         let last_save = LastSaveData {
-            preprocessed: res,
+            preprocessed: res.clone(),
             analyser: std::sync::RwLock::new(analyser),
         };
         let config_data = ConfigData {
@@ -70,9 +70,51 @@ impl Backend {
         };
 
 
+
+        // TEMP
+        
+        let parse_start = std::time::Instant::now();
+        let iter = res.par_iter();
+        let map = iter.map(|script| {
+            let mut parsed = Vec::new();
+            for variant in &script.variants {
+                //let mut dedup = combined.clone();
+                //dedup.dedup();
+                //assert!(dedup.len() == combined.len());
+                //let tokeniter = ASTTokenIndexIter::from(&combined, script);
+                let tokeniter = ASTTokenIndexIter::from_variant(variant, script);
+                //let tokeniter = ASTTokenIter::from(variant, script);
+                match tokeniter {
+                    Some(tokeniter) => {
+                        let parse = parse_iter(tokeniter);
+                        match parse {
+                            Ok(program) => parsed.push(program),
+                            Err(err) => {
+                                eprintln!("Error parsing script {}: {:?}", script.path().display(), err);
+                            }
+                        }
+                    }
+                    None => {
+                        eprintln!("Error creating token iterator for script {}", script.path().display());
+                    }
+                }
+            }
+            parsed
+        }).collect::<Vec<_>>();
+        let parse_duration = parse_start.elapsed();
+        //println!("Parsed {} scripts", map.len());
+        self.client.log_message(
+            MessageType::INFO,
+            format!("Parsed {} scripts in {:?}", map.len(), parse_duration)
+        ).await;
+        // TEMP 
+
+
         let mut configs = self.configs.write().unwrap();
 
         configs.insert(config, config_data);
 
     }
 }
+
+

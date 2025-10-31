@@ -113,6 +113,9 @@ impl<Query: CachableQuery<ResultType, Output>, Output: Send + Sync + 'static, Re
 }
 impl<Query: CachableQuery<ResultType, Output>, Output: Send + Sync + 'static, ResultType: AnalysisResult> DowncastableCache for RwLock<QueryCache<Query, Output, ResultType>> {
     fn guestimate_memory_usage(&self) -> usize {
-        self.read().unwrap().guestimate_memory_usage()
+        self.read().unwrap().queries.iter().map(|(state, queries)| {
+            let size = std::mem::size_of_val(state) + queries.len() * std::mem::size_of::<Query>();
+            size
+        }).sum()
     }
 }
