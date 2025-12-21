@@ -16,7 +16,7 @@ impl Analyser {
         variant_id: &CompilerState,
         query: &Query,
     ) -> Option<Arc<VariantData<Arc<Output>>>> {
-        let mut queries = self.cached_queries.write().unwrap();
+        let queries = self.cached_queries.read().unwrap();
         let cache = queries.get(&TypeId::of::<Query>())?;
         let cast = cache.clone().downcast_arc::<RwLock<QueryCache<Query, Output, ResultType>>>();
         if let Ok(cache) = cast {

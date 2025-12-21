@@ -15,13 +15,39 @@ mod query;
 mod cache;
 
 pub struct AnalysisContext<'a> {
-    pub variant_idx: usize,
+    //Index in a given result set, not the index within the files variant list
+    pub combined_idx: usize,
     pub analyser: &'a Analyser,
-    pub variant: &'a VariantID,
+    pub variant: &'a VariantKey
+
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VariantKey {
+    pub variant_idx: usize,
+    pub file_idx: usize,
+    pub variant_id: VariantID,
+}
+impl Display for VariantKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "VariantKey {{ variant_idx: {}, file_idx: {}, variant: {} }}", self.variant_idx, self.file_idx, self.variant_id)
+    }
+}
+impl VariantKey {
+    pub fn test_variant(file: PathBuf, state: CompilerState, variant_idx: usize, file_idx: usize) -> Self {
+        VariantKey {
+            variant_idx,
+            file_idx,
+            variant_id: VariantID::test_variant(file, state),
+        }
+    }
+}
+impl<'a> AnalysisContext<'a> {
 }
 impl Display for AnalysisContext<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AnalysisContext {{ variant_idx: {}, variant: {} }}", self.variant_idx, self.variant)
+        write!(f, "AnalysisContext {{ combined_idx: {}, variant: {} }}", self.combined_idx, self.variant)
     }
 }
 pub struct StaticVariantID {
@@ -60,7 +86,7 @@ impl AnalysisConfig {
 pub struct Analyser {
     pub config: AnalysisConfig,
     pub files: Arc<Vec<PreprocessedScript>>,
-    pub variants: Vec<VariantID>,//I dont like this, but i am so mentally done with fucking lifetimes
+    pub variants: Vec<VariantKey>,//I dont like this, but i am so mentally done with fucking lifetimes
     ///For future reference, dynamic typing in rust is an absolutely horrendous idea good fucking lord
     /// Why did i do this to myself
     pub steps: IndexMap<TypeId, Arc<dyn DowncastableStepInfo>>,
@@ -84,7 +110,11 @@ impl Analyser {
 
     pub fn push_files(&mut self, files: Arc<Vec<PreprocessedScript>>) {
         self.files = files;
-        self.variants = self.files.iter().flat_map(|f| f.variants.iter().map(|v| v.id.clone())).collect();
+        self.variants = self.files.iter().enumerate().flat_map(|(file_idx, f)| f.variants.iter().map(move |v| VariantKey {
+            variant_idx: v.id.variantidx,
+            file_idx,
+            variant_id: v.id.clone(),
+        })).collect();
     }
 
 }
@@ -162,10 +192,10 @@ mod messing_around {
 
         let testfile_1 = PathBuf::from("testfile_1.vscript");
         let testfile_2 = PathBuf::from("testfile_2.vscript");
-        
-        let variant1 = VariantID::test_variant(testfile_1.clone(), preprocessor.to_state_primitive("SERVER, MP"));
-        let variant2 = VariantID::test_variant(testfile_1, preprocessor.to_state_primitive("CLIENT, !MP"));
-        let variant3 = VariantID::test_variant(testfile_2, preprocessor.to_state_primitive("SERVER"));
+
+        let variant1 = VariantKey::test_variant(testfile_1.clone(), preprocessor.to_state_primitive("SERVER, MP"), 0, 0);
+        let variant2 = VariantKey::test_variant(testfile_1, preprocessor.to_state_primitive("CLIENT, !MP"), 1, 0);
+        let variant3 = VariantKey::test_variant(testfile_2, preprocessor.to_state_primitive("SERVER"), 2, 1);
 
         let mut analyser = Analyser {
             config: AnalysisConfig::default(),
@@ -198,10 +228,10 @@ mod messing_around {
 
         let testfile_1 = PathBuf::from("testfile_1.vscript");
         let testfile_2 = PathBuf::from("testfile_2.vscript");
-        
-        let variant1 = VariantID::test_variant(testfile_1.clone(), preprocessor.to_state_primitive("SERVER, MP"));
-        let variant2 = VariantID::test_variant(testfile_1, preprocessor.to_state_primitive("CLIENT, !MP"));
-        let variant3 = VariantID::test_variant(testfile_2, preprocessor.to_state_primitive("SERVER"));
+
+        let variant1 = VariantKey::test_variant(testfile_1.clone(), preprocessor.to_state_primitive("SERVER, MP"), 0, 0);
+        let variant2 = VariantKey::test_variant(testfile_1, preprocessor.to_state_primitive("CLIENT, !MP"), 1, 0);
+        let variant3 = VariantKey::test_variant(testfile_2, preprocessor.to_state_primitive("SERVER"), 2, 1);
 
         let mut analyser = Analyser {
             config: AnalysisConfig {

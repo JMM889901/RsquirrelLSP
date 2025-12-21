@@ -4,7 +4,7 @@ use downcast_rs::{impl_downcast, DowncastSync};
 use preprocessor::{PreprocessedVariant, VariantID};
 use rayon::{iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator}, result};
 
-use crate::{analysis_error::AnalysisError, cache::DowncastableCache, results::{AnalysisResult, AnalysisResults}, Analyser, AnalysisContext};
+use crate::{Analyser, AnalysisContext, VariantKey, analysis_error::AnalysisError, cache::DowncastableCache, results::{AnalysisResult, AnalysisResults}};
 
 impl Analyser {
     pub fn insert_step<Step: AnalysisStep<Return>, Return: AnalysisResult>(&mut self, step: Step, preserve: PreserveType) {
@@ -44,7 +44,7 @@ impl Analyser {
             step.analyse(vars, self);
         }
     }
-    pub fn run_variant_anonymous(&mut self, variant: &VariantID) -> Result<HashMap<TypeId, Arc<dyn AnalysisResult>>, AnalysisError> {
+    pub fn run_variant_anonymous(&mut self, variant: &VariantKey) -> Result<HashMap<TypeId, Arc<dyn AnalysisResult>>, AnalysisError> {
         let mut map = HashMap::new();
         //This is for files that are not in the load order, so they have no associated json entry
         //This is mostly for debugging and testing purposes
@@ -109,11 +109,11 @@ pub enum PreserveType{
 
 
 pub trait DowncastableStepInfo: Send + Sync + DowncastSync {
-    fn analyse(&self, vars: &[VariantID], analyser: &Analyser);
+    fn analyse(&self, vars: &[VariantKey], analyser: &Analyser);
 
     /// Analyse a single variant, this is mostly for files which do not exist in the load order and have just been randomly opened without an associated json entry
-    fn analyse_anonymous(&self, var: &VariantID, analyser: &Analyser) -> Result<Arc<dyn AnalysisResult>, AnalysisError>;
-    
+    fn analyse_anonymous(&self, var: &VariantKey, analyser: &Analyser) -> Result<Arc<dyn AnalysisResult>, AnalysisError>;
+
 
     fn step_name(&self) -> String {
         std::any::type_name::<Self>().to_string()
@@ -151,7 +151,7 @@ impl<U: AnalysisResult> DowncastableStepInfo for StepInfo<U> {
     fn step_scope_errors(&self) -> Vec<AnalysisError> {
         self.results.read().unwrap().errors.clone()
     }
-    fn analyse(&self, vars: &[VariantID], analyser: &Analyser){
+    fn analyse(&self, vars: &[VariantKey], analyser: &Analyser){
         let mut result_write = self.results.write().unwrap();
         let errs = RwLock::new(Vec::new());
         let iter = vars.par_iter().enumerate();
@@ -159,7 +159,7 @@ impl<U: AnalysisResult> DowncastableStepInfo for StepInfo<U> {
         //These need to be option since i need to preserve order, skipping fails kinda fucks indexing
             .map(|(i, file)| {
                 let context = AnalysisContext {
-                    variant_idx: i,
+                    combined_idx: i,
                     analyser,
                     variant: file,
                 };
@@ -181,9 +181,9 @@ impl<U: AnalysisResult> DowncastableStepInfo for StepInfo<U> {
         result_write.results = results;
 
     }
-    fn analyse_anonymous(&self, var: &VariantID, analyser: &Analyser) -> Result<Arc<dyn AnalysisResult>, AnalysisError> {
+    fn analyse_anonymous(&self, var: &VariantKey, analyser: &Analyser) -> Result<Arc<dyn AnalysisResult>, AnalysisError> {
         let context = AnalysisContext {
-            variant_idx: usize::MAX,
+            combined_idx: usize::MAX,
             analyser,
             variant: var,
         };

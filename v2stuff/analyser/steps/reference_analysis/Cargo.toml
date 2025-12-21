@@ -1,0 +1,8 @@
+[package]
+name = "reference_analysis"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+runner = { path = "../../runner" } 
+sqparse = { path = "../../../sqparse_errec/sqparse" }

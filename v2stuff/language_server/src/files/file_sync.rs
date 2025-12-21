@@ -7,7 +7,7 @@ use runner::Analyser;
 use sqparse::{parse, parse_iter};
 use tower_lsp::lsp_types::{notification::Progress, MessageType};
 
-use crate::{Backend, ConfigData, LastSaveData};
+use crate::{Backend, ConfigData, LSPConfig, LastSaveData};
 
 impl Backend {
     pub async fn load_all_files(&self) {
@@ -55,10 +55,18 @@ impl Backend {
         }).await;
 
         let res = Arc::new(res);
-        let mut analyser = Analyser::default();
-        analyser.push_files(res.clone());
 
-        let config = LoadConfig::default();//TODO: if i choose to do configs this way, change this
+        let config = LSPConfig::default();//TODO: if i choose to do configs this way, change this
+        let mut analyser = config.build_analyser(); 
+        let analysis_start = std::time::Instant::now();
+        analyser.push_files(res.clone());
+        analyser.run_steps();
+        let analysis_duration = analysis_start.elapsed();
+        self.client.log_message(
+            MessageType::INFO,
+            format!("Analyzed {} files in {:?}", res.len(), analysis_duration)
+        ).await;
+
         let last_save = LastSaveData {
             preprocessed: res.clone(),
             analyser: std::sync::RwLock::new(analyser),
@@ -72,7 +80,7 @@ impl Backend {
 
 
         // TEMP
-        
+        /* 
         let parse_start = std::time::Instant::now();
         let iter = res.par_iter();
         let map = iter.map(|script| {
@@ -108,7 +116,7 @@ impl Backend {
             format!("Parsed {} scripts in {:?}", map.len(), parse_duration)
         ).await;
         // TEMP 
-
+        */
 
         let mut configs = self.configs.write().unwrap();
 

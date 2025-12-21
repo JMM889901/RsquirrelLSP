@@ -125,8 +125,11 @@ impl<'a> TokenStore<'a> {
 pub struct VariantID {
     pub state: CompilerState,
     pub file: LoadedFile,//This should be replaced later, its an arc and i dont actually *need* most of that information later
+    pub variantidx: usize,
     //I should just use something with copy, and i only really need a path (load position could also work)
     //^ Technically i use the text as well, but only really so i can print for debugging
+    //pub fileidx: usize,//So, you know how they say preemptive optimization is the root of all evil?
+    //That, literally fucking that. I am literally the cause of all my problems
 }
 impl Display for VariantID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -140,6 +143,7 @@ impl VariantID {
         VariantID {
             state,
             file: LoadedFile::create_dummy(0, file),
+            variantidx: 0,
         }
     }
 }
@@ -196,7 +200,7 @@ impl<'a> ASTTokenIter<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ASTTokenIndexIter<'a> {
-    pub tokens: &'a [TokenItem<'a>],
+    pub tokens: &'a [TokenItem<'static>],
     pub mapped_positions: &'a [usize],
     pub index: usize,
 }

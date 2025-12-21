@@ -14,11 +14,11 @@ impl AnalysisContext<'_> {
     /// 
     pub fn get_own_result<ResultType : AnalysisResult>(&self) -> Result<Arc<ResultType>, AnalysisError> {
         let res = self.analyser.get_results::<ResultType>()?;
-        if let Some(Some(result)) = res.get(self.variant_idx){
+        if let Some(Some(result)) = res.get(self.combined_idx){
             return Ok(result.clone());
         }
         Err(AnalysisError::VariantLacksResult { 
-            variant: self.variant_idx, 
+            variant: self.combined_idx, 
             step: std::any::type_name::<ResultType>().to_string() 
         })
     }

@@ -34,14 +34,11 @@ async fn main() {
     let (service, socket) = LspService::new(Backend::new);
     Server::new(stdin, stdout, socket).serve(service).await;
 }
-
-#[derive(Debug, Default)]
-pub struct ConfigData {
-    pub files: Vec<LoadedFile>,
-    pub last_edit: Option<LastEditData>,
-    pub last_save: LastSaveData,
+#[derive(Debug, Default, PartialEq, Hash)]
+pub struct LSPConfig {
+    load_config: LoadConfig,
 }
-impl ConfigData {
+impl LSPConfig {
     pub fn build_analyser(&self) -> Analyser {
         //Eventually, this will apply various config stuff here
         let mut analyser = Analyser::default();
@@ -49,6 +46,15 @@ impl ConfigData {
         analyser
     }
 }
+impl Eq for LSPConfig{}
+
+#[derive(Debug, Default)]
+pub struct ConfigData {
+    pub files: Vec<LoadedFile>,
+    pub last_edit: Option<LastEditData>,
+    pub last_save: LastSaveData,
+}
+
 #[derive(Debug, Default)]
 pub struct LastEditData {
     pub preprocessed: Vec<PreprocessedScript>
@@ -78,7 +84,7 @@ struct Backend {
     client: Client,
     loader: RwLock<ModLoader>,
     preprocessor: PreprocessorData,
-    configs: RwLock<HashMap<LoadConfig, ConfigData>>
+    configs: RwLock<HashMap<LSPConfig, ConfigData>>
 }
 
 impl Backend {

@@ -18,12 +18,12 @@ impl Analyser {
         for variant in self.variants.iter() {
             match self.config.prebuild_trees {
                 PrebuildTrees::Always => {
-                    if self.prebuilt_trees.contains_key(&variant.state) {
+                    if self.prebuilt_trees.contains_key(&variant.variant_id.state) {
                         continue; //Already built this
                     }
-                    match self.prebuild_tree(variant) {
+                    match self.prebuild_tree(&variant.variant_id) {
                         Ok(res) => {
-                            new_trees.insert(variant.state.clone(), res);
+                            new_trees.insert(variant.variant_id.state.clone(), res);
                         },
                         Err(e) => {
                             self.handle_error(e);
@@ -32,12 +32,12 @@ impl Analyser {
                 },
                 PrebuildTrees::Never => continue,
                 PrebuildTrees::After(count) => {
-                    let so_far = map.entry(variant.state.clone()).or_insert(0);
+                    let so_far = map.entry(variant.variant_id.state.clone()).or_insert(0);
                     *so_far += 1;//Does this do what i think it does?
                     if *so_far == count {//No point building multiple times
-                        match self.prebuild_tree(variant) {
+                        match self.prebuild_tree(&variant.variant_id) {
                             Ok(res) => {
-                                new_trees.insert(variant.state.clone(), res);
+                                new_trees.insert(variant.variant_id.state.clone(), res);
                             },
                             Err(e) => {
                                 self.handle_error(e);
@@ -56,10 +56,10 @@ impl Analyser {
         //As the name implies this should be run at the start, so it can be parrallelised
         let iter = self.variants.par_iter().enumerate();
         let res = VariantData::Multi(iter.filter_map(|(idx, v)| {
-            if v.state.rejects_explicit(&variant.state) {
+            if v.variant_id.state.rejects_explicit(&variant.state) {
                 return None; //This variant is not compatible with the target state, so skip it
             }
-            Some((v.clone(), idx, ()))
+            Some((v.variant_id.clone(), idx, ()))
         }).collect::<Vec<_>>());
         let res = res.resolve(variant);
 

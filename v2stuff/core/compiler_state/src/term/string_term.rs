@@ -27,11 +27,10 @@ impl PreprocessorTerm for StringTerm {
     fn compare(&self, other: &Self) -> super::CompareResult {
         if self.term == other.term {
             return match (&self.truth, &other.truth) {
-                (TermTruth::True, TermTruth::True) => super::CompareResult::Accept,
+                (TermTruth::True, TermTruth::True) | 
                 (TermTruth::False, TermTruth::False) => super::CompareResult::Accept,
-                (TermTruth::True, TermTruth::False) => super::CompareResult::Reject,
-                (TermTruth::False, TermTruth::True) => super::CompareResult::Reject,
-                _ => super::CompareResult::DontCare,
+                (TermTruth::DontCare, _) | (_, TermTruth::DontCare) => super::CompareResult::DontCare,
+                _ => super::CompareResult::Reject,
             }
         }
         super::CompareResult::DontCare

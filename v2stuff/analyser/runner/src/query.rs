@@ -34,11 +34,11 @@ impl Analyser {
     pub fn query<ResultType: AnalysisResult, Output: Send + Sync + 'static, Q: CachableQuery<ResultType, Output>>(&self, context: &AnalysisContext, query: Q, mask: QueryMask) -> Result<VariantData<Arc<Output>>, AnalysisError> {
 
         if self.config.cache_queries() {
-            if let Some(cached) = self.cached_query(&context.variant.state, &query) {
+            if let Some(cached) = self.cached_query(&context.variant.variant_id.state, &query) {
                 return self.from_cached_query::<ResultType, Output, Q>(context, cached.as_ref(), mask);
             }
             let result = self.build_query_tree(context, |v, idx, res| query.apply(v, idx, res).map(Arc::new), QueryMask::All)?;//For caching might as well grab everything
-            let res = self.cache_query(result, &context.variant.state, query);
+            let res = self.cache_query(result, &context.variant.variant_id.state, query);
             match res {
                 Ok(res) => return self.from_cached_query::<ResultType, Output, Q>(context, res.as_ref(), mask),
                 Err(result) => {
@@ -55,26 +55,26 @@ impl Analyser {
         match mask {//TODO: This can be optimized to stop when the first idx < target happens
             //I'd much MUCH rather do borrows than arcs, but that causes downcasting lifetime shenanigans 
             //Reason number 9331 why i should have just used enums
-            QueryMask::All => Ok(res.clone().resolve(context.variant)),
+            QueryMask::All => Ok(res.clone().resolve(&context.variant.variant_id)),
             QueryMask::Before => {
                 let filtered = res.filter_map(&mut |id, idx, value| {
-                    if idx < context.variant_idx {
+                    if idx < context.combined_idx {
                         Some(value.clone())
                     } else {
                         None
                     }
                 });
-                Ok(filtered.resolve(context.variant))
+                Ok(filtered.resolve(&context.variant.variant_id))
             },
             QueryMask::After => {
                 let filtered = res.filter_map(&mut |id, idx, value| {
-                    if idx > context.variant_idx {
+                    if idx > context.combined_idx {
                         Some(value.clone())
                     } else {
                         None
                     }
                 });
-                Ok(filtered.resolve(context.variant))
+                Ok(filtered.resolve(&context.variant.variant_id))
             },
         }
     }
@@ -86,26 +86,26 @@ impl Analyser {
         let iter = self.variants.iter().zip(result).enumerate();
         let iter: Box<dyn Iterator<Item = _>> = match mask {
             QueryMask::All => Box::new(iter),
-            QueryMask::Before => Box::new(iter.take(variant.variant_idx)),//should this be takewhile?
-            QueryMask::After => Box::new(iter.skip(variant.variant_idx + 1)),
+            QueryMask::Before => Box::new(iter.take(variant.combined_idx)),//should this be takewhile?
+            QueryMask::After => Box::new(iter.skip(variant.combined_idx + 1)),
         };
         let res = VariantData::Multi(iter.filter_map(|(idx, (v, res))| {
-            if v.state.rejects_explicit(&variant.variant.state) {
+            if v.variant_id.state.rejects_explicit(&variant.variant.variant_id.state) {
                 return None; //This variant is not compatible with the target state, so skip it
             }
             if let Some(res) = res {
-                if let Some(res) = map_fn(v, idx, &res) {
-                    return Some((v.clone(), idx, res));
+                if let Some(res) = map_fn(&v.variant_id, idx, &res) {
+                    return Some((v.variant_id.clone(), idx, res));
                 }
             }
             None
         }).collect::<Vec<_>>());
-        let res = res.resolve(variant.variant);
+        let res = res.resolve(&variant.variant.variant_id);
         if res.is_some() {
             return Ok(res);
         }
         Err(AnalysisError::TreeBuildFailed {
-            variant: variant.variant.clone(),
+            variant: variant.variant.variant_id.clone(),
             reason: "No matching variants found, even though self is in the tree".to_string(),
         })
     }
@@ -168,11 +168,11 @@ impl Analyser {
         assert!(result.len() == self.variants.len(), "Result length does not match variants length");
         let iter = self.variants.iter().zip(result).enumerate();
         let res = VariantData::Multi(iter.filter_map(|(idx, (v, res))| {
-            if v.state.rejects_explicit(&variant.state) {
+            if v.variant_id.state.rejects_explicit(&variant.state) {
                 return None; //This variant is not compatible with the target state, so skip it
             }
             if let Some(res) = res {
-                return Some((v.clone(), idx, res));
+                return Some((v.variant_id.clone(), idx, res));
             }
             None
         }).collect::<Vec<_>>());

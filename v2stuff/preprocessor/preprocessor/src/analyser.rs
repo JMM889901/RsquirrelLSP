@@ -8,14 +8,14 @@ use crate::{predictor::evaluate_state, Block, PreprocessedVariant, Preprocessor,
 impl Preprocessor{
     pub fn split_ast(&self, ast: &PreprocessedAST<'_>, states: Vec<CompilerState>, id: &LoadedFile, len: usize) -> Vec<PreprocessedVariant> {
         let mut variants = Vec::new();
-        for state in states {
-            let variant = self.apply_state(ast, &state, id, len);
+        for (i, state) in states.iter().enumerate() {
+            let variant = self.apply_state(ast, state, id, i, len);
             variants.push(variant);
         }
         variants
     }
 
-    pub fn apply_state(&self, ast: &PreprocessedAST<'_>, state: &CompilerState, id: &LoadedFile, len: usize) -> PreprocessedVariant {
+    pub fn apply_state(&self, ast: &PreprocessedAST<'_>, state: &CompilerState, id: &LoadedFile, variantidx: usize, len: usize) -> PreprocessedVariant {
         let mut blocks = Vec::new();
         for ast in ast{
             blocks.extend(get_blocks(ast, state));
@@ -27,6 +27,7 @@ impl Preprocessor{
             id: VariantID {
                 state: state.clone(),
                 file: id.clone(),
+                variantidx,
             },
             blocks,
             index_map,
